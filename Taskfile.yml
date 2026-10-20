@@ -43,29 +43,25 @@ tasks:
     desc: Pre-release checks (internal step)
     requires:
       vars: [VERSION]
+    preconditions:
+      - sh: '[[ "{{.VERSION}}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]'
+        msg: 'VERSION must be x.y.z, got {{.VERSION}}'
+      - sh: 'test -z "$(git status --porcelain)"'
+        msg: 'worktree is dirty, commit or stash first'
+      - sh: 'test "$(git branch --show-current)" = "{{.BRANCH}}"'
+        msg: 'releases must be cut from {{.BRANCH}}'
+      - sh: 'git fetch {{.REMOTE}} {{.BRANCH}} && test "$(git rev-parse HEAD)" = "$(git rev-parse {{.REMOTE}}/{{.BRANCH}})"'
+        msg: 'local HEAD and origin/{{.BRANCH}} differ (ahead or behind): push or pull first'
+      - sh: '! git rev-parse -q --verify "refs/tags/{{.VERSION}}" >/dev/null'
+        msg: 'tag {{.VERSION}} already exists locally'
+      - sh: '! git ls-remote --exit-code --tags {{.REMOTE}} "refs/tags/{{.VERSION}}" >/dev/null'
+        msg: 'tag {{.VERSION}} already exists on {{.REMOTE}}'
+      - sh: 'command -v gh >/dev/null'
+        msg: 'GitHub CLI required (brew install gh)'
+      - sh: 'gh auth status >/dev/null 2>&1'
+        msg: 'gh is not logged in, run gh auth login first'
     cmds:
-      - |
-        set -euo pipefail
-        [[ "{{.VERSION}}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] \
-          || { echo "VERSION must be x.y.z, got: {{.VERSION}}"; exit 1; }
-        test -z "$(git status --porcelain)" \
-          || { echo "worktree is dirty, commit or stash first"; exit 1; }
-        test "$(git branch --show-current)" = "{{.BRANCH}}" \
-          || { echo "releases must be cut from {{.BRANCH}}"; exit 1; }
-        git fetch {{.REMOTE}} {{.BRANCH}}
-        test "$(git rev-parse HEAD)" = "$(git rev-parse {{.REMOTE}}/{{.BRANCH}})" \
-          || { echo "local HEAD and origin/{{.BRANCH}} differ (ahead or behind), pull/push first"; exit 1; }
-        if git rev-parse -q --verify "refs/tags/{{.VERSION}}" >/dev/null; then
-          echo "tag {{.VERSION}} already exists locally"; exit 1
-        fi
-        if git ls-remote --exit-code --tags {{.REMOTE}} "refs/tags/{{.VERSION}}" >/dev/null; then
-          echo "tag {{.VERSION}} already exists on {{.REMOTE}}"; exit 1
-        fi
-        command -v gh >/dev/null \
-          || { echo "GitHub CLI required (brew install gh)"; exit 1; }
-        gh auth status >/dev/null 2>&1 \
-          || { echo "gh is not logged in, run gh auth login first"; exit 1; }
-        echo "preflight OK: {{.VERSION}}"
+      - 'echo "preflight OK: {{.VERSION}}"'
 
   dist:
     internal: true
