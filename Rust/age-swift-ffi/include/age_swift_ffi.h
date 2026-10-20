@@ -35,11 +35,11 @@ typedef enum ageswift_status {
     AGESWIFT_ERR_INVALID_RECIPIENT = 3,
     /* Encryption failed. */
     AGESWIFT_ERR_ENCRYPTION_FAILED = 4,
-    /* Decryption failed (e.g. corrupted payload). */
+    /* Decryption failed (e.g. corrupted payload or a tampered header). */
     AGESWIFT_ERR_DECRYPTION_FAILED = 5,
     /* No provided identity/passphrase matched the file header. */
     AGESWIFT_ERR_NO_MATCHING_KEY = 6,
-    /* Input is not a valid age file (bad magic / header / MAC). */
+    /* Input is not a valid age file (bad magic or malformed header/armor). */
     AGESWIFT_ERR_INVALID_FORMAT = 7,
     /* A Rust panic was caught at the FFI boundary. */
     AGESWIFT_ERR_PANIC = 8

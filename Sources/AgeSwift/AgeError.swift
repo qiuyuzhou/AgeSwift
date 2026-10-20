@@ -12,12 +12,15 @@ public enum AgeError: Error, Equatable, Sendable, CustomStringConvertible {
     /// Encryption failed in the underlying age implementation.
     case encryptionFailed(String)
     /// The data is not a valid age file in either representation: bad magic
-    /// bytes, header, or header MAC — or malformed ASCII armor. The detail is
-    /// the secret-free backend description (e.g. "invalid ASCII armor: ...").
+    /// bytes, a malformed header, or malformed ASCII armor. A header that
+    /// parses but fails its MAC check (tampered file) is `.decryptionFailed`.
+    /// The detail is the secret-free backend description
+    /// (e.g. "invalid ASCII armor: ...").
     case invalidFormat(String)
     /// None of the provided identities or passphrases could decrypt the file.
     case noMatchingKey
-    /// Decryption failed after the header was accepted (corrupted or truncated payload).
+    /// Decryption failed after the header was parsed: a corrupted or truncated
+    /// payload, or a tampered header that fails its MAC check.
     case decryptionFailed(String)
     /// The Rust backend returned an unexpected result (never expected in practice).
     case backendFailure(String)

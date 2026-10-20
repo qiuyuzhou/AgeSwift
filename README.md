@@ -210,9 +210,9 @@ binary — binary and armored, plus armor/dearmor conversion interop.
 | `.invalidIdentity` | Not a valid `AGE-SECRET-KEY-1...` string |
 | `.invalidRecipient` | Not a valid `age1...` string |
 | `.encryptionFailed(String)` | Encryption backend failure |
-| `.invalidFormat(String)` | Input is not an age file — bad magic/header, or malformed ASCII armor; the payload carries the secret-free backend explanation |
+| `.invalidFormat(String)` | Input is not an age file — bad magic, malformed header, or malformed ASCII armor; the payload carries the secret-free backend explanation |
 | `.noMatchingKey` | Wrong passphrase, or none of the identities match |
-| `.decryptionFailed(String)` | Corrupted or truncated payload |
+| `.decryptionFailed(String)` | Corrupted or truncated payload, or a tampered file (header MAC check failed) |
 | `.backendFailure(String)` | Unexpected backend result (never expected) |
 
 Error messages never contain key material, passphrases, or plaintext.

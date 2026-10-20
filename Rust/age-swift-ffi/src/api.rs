@@ -154,7 +154,9 @@ fn strip_leading_armor_whitespace(input: &[u8]) -> Option<&[u8]> {
 }
 
 /// Structural validation shared by the conversion functions: parses the age
-/// header (including its MAC). No keys are involved.
+/// header, including the MAC field. The MAC value itself is only checked when
+/// a key opens the file, so this verifies structure, not integrity. No keys
+/// are involved.
 fn validate_age_file(binary: &[u8]) -> Result<(), CoreError> {
     Decryptor::new(binary).map_err(map_decrypt_error).map(|_| ())
 }
