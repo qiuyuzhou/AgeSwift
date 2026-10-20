@@ -18,8 +18,8 @@ let localXCFramework = "Artifacts/AgeSwiftFFI.xcframework"
 
 // Updated by `task release` — keep these two lines in this exact shape; the
 // release task patches them by regex and verifies the result.
-let releasedBinaryURL = "https://github.com/qiuyuzhou/AgeSwift/releases/download/0.0.0/AgeSwiftFFI.xcframework.zip"
-let releasedBinaryChecksum = "0000000000000000000000000000000000000000000000000000000000000000"
+let releasedBinaryURL = "https://github.com/qiuyuzhou/AgeSwift/releases/download/0.1.0/AgeSwiftFFI.xcframework.zip"
+let releasedBinaryChecksum = "fcc8c9d0b438252e3c42e67d3087287153d58e1fed3c7d032ba721b2682baac8"
 
 let ffiTarget: Target = FileManager.default.fileExists(atPath: localXCFramework)
     ? .binaryTarget(name: "AgeSwiftFFI", path: localXCFramework)
