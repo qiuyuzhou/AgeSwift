@@ -319,9 +319,8 @@ Current limitations:
   code but the CI matrix currently exercises arm64 hosts; the Intel slice is
   cross-compiled and unit-tested via the same Rust tests.
 
-Roadmap ideas (in rough priority order): tagged releases with a checksummed
-remote binary target (keeping the source build path); iOS/tvOS/watchOS
-slices; SSH recipient support; streaming APIs.
+Roadmap ideas (in rough priority order): iOS/tvOS/watchOS slices; SSH
+recipient support; streaming APIs.
 
 ## License
 
