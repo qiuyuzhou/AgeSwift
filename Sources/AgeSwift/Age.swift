@@ -57,9 +57,6 @@ public enum Age {
         recipients: [AgeRecipient],
         format: ageswift_format
     ) throws -> Data {
-        guard !recipients.isEmpty else {
-            throw AgeError.invalidArgument("at least one recipient is required")
-        }
         let strings = recipients.map(\.serialized)
         return try AgeFFI.withBytes(of: plaintext) { bytes, count in
             try AgeFFI.withCStringsAsArray(strings) { recipientArray in
@@ -112,9 +109,6 @@ public enum Age {
     ///   ``AgeError/decryptionFailed`` if the payload is corrupted or
     ///   truncated.
     public static func decrypt(_ ciphertext: Data, identities: [AgeIdentity]) throws -> Data {
-        guard !identities.isEmpty else {
-            throw AgeError.invalidArgument("at least one identity is required")
-        }
         let strings = identities.map(\.serialized)
         return try AgeFFI.withBytes(of: ciphertext) { bytes, count in
             try AgeFFI.withCStringsAsArray(strings) { identityArray in

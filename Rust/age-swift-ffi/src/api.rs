@@ -48,11 +48,7 @@ pub(crate) fn encrypt_to_recipients(
     recipients: &[x25519::Recipient],
     format: Format,
 ) -> Result<Vec<u8>, CoreError> {
-    if recipients.is_empty() {
-        return Err(CoreError::InvalidArgument(
-            "at least one recipient is required",
-        ));
-    }
+    // An empty list is rejected at the FFI boundary (`input_str_list`).
     let recipients: Vec<&dyn age::Recipient> = recipients.iter().map(|r| r as _).collect();
     encrypt_impl(plaintext, recipients, format)
 }
@@ -99,11 +95,7 @@ pub(crate) fn decrypt_with_identities(
     ciphertext: &[u8],
     identities: &[x25519::Identity],
 ) -> Result<Vec<u8>, CoreError> {
-    if identities.is_empty() {
-        return Err(CoreError::InvalidArgument(
-            "at least one identity is required",
-        ));
-    }
+    // An empty list is rejected at the FFI boundary (`input_str_list`).
     let identities: Vec<&dyn age::Identity> = identities.iter().map(|i| i as _).collect();
     decrypt_impl(ciphertext, identities)
 }
