@@ -113,8 +113,9 @@ tasks:
       vars: [VERSION]
     cmds:
       - git push {{.REMOTE}} {{.BRANCH}} refs/tags/{{.VERSION}}
-      - gh release create {{.VERSION}} {{.ZIP}} \
-          --verify-tag --title {{.VERSION}} --generate-notes
+      # Keep this on one line: a YAML plain scalar folds a "\\\n" continuation
+      # into "\ ", and the shell then passes a literal backslash argument.
+      - gh release create {{.VERSION}} {{.ZIP}} --verify-tag --title {{.VERSION}} --generate-notes
       - 'echo "released {{.VERSION}}: https://github.com/{{.REPO}}/releases/tag/{{.VERSION}}"'
 
   # ---- public entry points ----
