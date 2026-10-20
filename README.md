@@ -132,8 +132,11 @@ let encrypted = try Age.encrypt(plaintext, passphrase: "a strong passphrase")
 let decrypted = try Age.decrypt(encrypted, passphrase: "a strong passphrase")
 ```
 
-Passphrase operations deliberately cost about a second of CPU — keep them off
-the main thread.
+Passphrase encryption targets about one second of CPU. Decryption accepts the
+work factor stored in the file, up to the age backend's cap (the benchmarked
+1-second target plus four doublings): a hostile file can force the worst case
+of roughly 16 seconds of CPU and proportionally large memory per attempt.
+Keep passphrase work off the main thread.
 
 ### ASCII armor
 
@@ -233,9 +236,14 @@ Error messages never contain key material, passphrases, or plaintext.
   `Rust/age-swift-ffi/src/ffi.rs` for the enforced invariants.
 - **No logging of secrets** by the library. `AgeIdentity` redacts its
   `description`; serialization is deliberately explicit.
-- **scrypt cost.** Both passphrase encryption and (wrong-passphrase)
-  decryption perform ~1 second of scrypt work per the age standard; this is
-  intentional DoS resistance, not a bug.
+- **scrypt cost.** Passphrase encryption targets ~1 second of scrypt work.
+  Decryption accepts the work factor stored in the file up to the age
+  backend's cap (benchmarked 1-second target plus four doublings, ~16x):
+  a hostile file can force roughly 16 seconds of CPU and proportionally
+  large memory (hundreds of MB or more) per attempt. The cap matches the
+  upstream CLI by design. Applications that decrypt untrusted files can
+  lower it (`scrypt::Identity::set_max_work_factor` in the age crate);
+  AgeSwift does not expose that knob yet.
 - The library imposes **no code-signing, Keychain, or entitlement
   requirements** on applications that link it.
 

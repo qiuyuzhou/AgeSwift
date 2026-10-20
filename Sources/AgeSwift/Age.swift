@@ -3,10 +3,11 @@ import AgeSwiftFFI
 
 /// Namespace for in-memory age v1 encryption and decryption.
 ///
-/// All functions are stateless, non-blocking-thread-safe, and blocking:
-/// scrypt passphrase operations deliberately cost roughly one second of
-/// CPU time (age's standard work factor), so call them off the main thread
-/// if that matters to your application.
+/// All functions are stateless, thread-safe, and blocking: scrypt passphrase
+/// operations cost about one second of CPU each (age's standard work factor),
+/// and decrypting a hostile file can cost up to ~16x that (see README
+/// "Security considerations"), so call them off the main thread if that
+/// matters to your application.
 public enum Age {
 
     // MARK: - Encryption
