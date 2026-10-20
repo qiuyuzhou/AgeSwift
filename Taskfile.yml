@@ -1,12 +1,12 @@
 # AgeSwift task runner — https://taskfile.dev
 #
-# 日常开发：
-#   task build        构建 Rust FFI 的 XCFramework
-#   task test         跑 Rust + Swift 全部测试
+# Day-to-day development:
+#   task build        build the Rust FFI XCFramework
+#   task test         run the full Rust + Swift test suite
 #
-# 发版（本地一键，详见 README 的 Releasing 章节）：
+# Releasing (one local command; see README "Releasing (maintainers)"):
 #   task release VERSION=x.y.z
-#   task verify-release VERSION=x.y.z   发布后验证下游可解析
+#   task verify-release VERSION=x.y.z   verify downstream resolution after a release
 version: '3'
 
 vars:
@@ -20,56 +20,56 @@ vars:
 
 tasks:
   default:
-    desc: 列出全部任务
+    desc: List all tasks
     cmds:
       - task --list
 
   build:
-    desc: 从 Rust 源码构建 XCFramework（release 配置）
+    desc: Build the XCFramework from the Rust sources (release profile)
     cmds:
       - ./Scripts/build-xcframework.sh
 
   test:
-    desc: 运行 Rust 测试与 swift test
+    desc: Run the Rust tests and swift test
     deps: [build]
     cmds:
       - cargo test --manifest-path Rust/age-swift-ffi/Cargo.toml
       - swift test
 
-  # ---- 以下 task 标记为 internal，仅供 release 编排调用，不出现在 --list ----
+  # ---- internal tasks below: release orchestration steps only, hidden from --list ----
 
   preflight:
     internal: true
-    desc: 发布前检查（内部步骤）
+    desc: Pre-release checks (internal step)
     requires:
       vars: [VERSION]
     cmds:
       - |
         set -euo pipefail
         [[ "{{.VERSION}}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] \
-          || { echo "VERSION 必须是 x.y.z 形式，收到：{{.VERSION}}"; exit 1; }
+          || { echo "VERSION must be x.y.z, got: {{.VERSION}}"; exit 1; }
         test -z "$(git status --porcelain)" \
-          || { echo "工作区不干净，请先提交或 stash"; exit 1; }
+          || { echo "worktree is dirty, commit or stash first"; exit 1; }
         test "$(git branch --show-current)" = "{{.BRANCH}}" \
-          || { echo "必须在 {{.BRANCH}} 分支上发版"; exit 1; }
+          || { echo "releases must be cut from {{.BRANCH}}"; exit 1; }
         git fetch {{.REMOTE}} {{.BRANCH}}
         test "$(git rev-parse HEAD)" = "$(git rev-parse {{.REMOTE}}/{{.BRANCH}})" \
-          || { echo "本地与 origin/{{.BRANCH}} 不一致（落后或超前），先 pull/push"; exit 1; }
+          || { echo "local HEAD and origin/{{.BRANCH}} differ (ahead or behind), pull/push first"; exit 1; }
         if git rev-parse -q --verify "refs/tags/{{.VERSION}}" >/dev/null; then
-          echo "本地已存在 tag {{.VERSION}}"; exit 1
+          echo "tag {{.VERSION}} already exists locally"; exit 1
         fi
         if git ls-remote --exit-code --tags {{.REMOTE}} "refs/tags/{{.VERSION}}" >/dev/null; then
-          echo "远端已存在 tag {{.VERSION}}"; exit 1
+          echo "tag {{.VERSION}} already exists on {{.REMOTE}}"; exit 1
         fi
         command -v gh >/dev/null \
-          || { echo "需要 GitHub CLI（brew install gh）"; exit 1; }
+          || { echo "GitHub CLI required (brew install gh)"; exit 1; }
         gh auth status >/dev/null 2>&1 \
-          || { echo "gh 未登录，先运行 gh auth login"; exit 1; }
+          || { echo "gh is not logged in, run gh auth login first"; exit 1; }
         echo "preflight OK: {{.VERSION}}"
 
   dist:
     internal: true
-    desc: 打包 XCFramework zip 并计算 SPM checksum（内部步骤）
+    desc: Zip the XCFramework and compute the SPM checksum (internal step)
     deps: [build]
     cmds:
       - rm -f {{.ZIP}} {{.CHECKSUM_FILE}}
@@ -78,7 +78,7 @@ tasks:
 
   manifest:
     internal: true
-    desc: 把版本与 checksum 写入 Package.swift（内部步骤）
+    desc: Write the release URL and checksum into Package.swift (internal step)
     requires:
       vars: [VERSION]
     cmds:
@@ -88,39 +88,39 @@ tasks:
         URL="https://github.com/{{.REPO}}/releases/download/{{.VERSION}}/{{.XCFRAMEWORK}}.zip"
         perl -0pi -e 's{(let releasedBinaryURL = ")[^"]*(")}{$1'"$URL"'$2}' Package.swift
         perl -0pi -e 's{(let releasedBinaryChecksum = ")[^"]*(")}{$1'"$CHECKSUM"'$2}' Package.swift
-        # 校验替换真的发生了（清单行形状变了就在这里失败）
+        # Verify the substitutions actually happened (fails here if the manifest shape drifts)
         grep -F "let releasedBinaryURL = \"$URL\"" Package.swift
         grep -F "let releasedBinaryChecksum = \"$CHECKSUM\"" Package.swift
 
   tag:
     internal: true
-    desc: 提交 manifest 变更并打 annotated tag（内部步骤）
+    desc: Commit the manifest change and create the annotated tag (internal step)
     requires:
       vars: [VERSION]
     cmds:
       - git add Package.swift
       - |
         if git diff --cached --quiet -- Package.swift; then
-          echo "Package.swift 无变化，中止"; exit 1
+          echo "Package.swift unchanged, aborting"; exit 1
         fi
       - git commit -m "Release {{.VERSION}}"
       - git tag -a {{.VERSION}} -m "AgeSwift {{.VERSION}}"
 
   publish:
     internal: true
-    desc: 推送并创建 GitHub Release，附上同一份 zip（内部步骤）
+    desc: Push and create the GitHub Release with the same zip (internal step)
     requires:
       vars: [VERSION]
     cmds:
       - git push {{.REMOTE}} {{.BRANCH}} refs/tags/{{.VERSION}}
       - gh release create {{.VERSION}} {{.ZIP}} \
           --verify-tag --title {{.VERSION}} --generate-notes
-      - echo "已发布 {{.VERSION}}：https://github.com/{{.REPO}}/releases/tag/{{.VERSION}}"
+      - 'echo "released {{.VERSION}}: https://github.com/{{.REPO}}/releases/tag/{{.VERSION}}"'
 
-  # ---- 对外入口 ----
+  # ---- public entry points ----
 
   release:
-    desc: 发布新版本（用法：task release VERSION=x.y.z）
+    desc: "Release a new version (usage: task release VERSION=x.y.z)"
     requires:
       vars: [VERSION]
     cmds:
@@ -132,11 +132,11 @@ tasks:
       - task: publish
       - |
         echo ""
-        echo "发布完成 {{.VERSION}}。建议再跑一次端到端验证："
+        echo "Released {{.VERSION}}. Recommended: run the end-to-end check"
         echo "  task verify-release VERSION={{.VERSION}}"
 
   verify-release:
-    desc: 用一个临时工程验证新版本可被下游解析并编译（用法：task verify-release VERSION=x.y.z）
+    desc: "Verify the new version resolves and builds in a scratch package (usage: task verify-release VERSION=x.y.z)"
     requires:
       vars: [VERSION]
     cmds:
@@ -163,4 +163,4 @@ tasks:
         EOF
         swift package resolve
         swift build
-        echo "verify-release OK: 下游可解析并编译 {{.VERSION}}"
+        echo "verify-release OK: {{.VERSION}} resolves and builds downstream"
