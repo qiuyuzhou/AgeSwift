@@ -16,9 +16,16 @@ enum InteropTooling {
         ageCandidates.first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
-    static var expectAvailable: Bool {
-        FileManager.default.isExecutableFile(atPath: expectPath)
-    }
+    /// `expect` is only usable when it can actually allocate a pty; the
+    /// binary exists in environments where spawning one is denied.
+    static let expectAvailable: Bool = {
+        guard FileManager.default.isExecutableFile(atPath: expectPath) else { return false }
+        guard let probe = try? ProcessRunner.run(
+            executable: expectPath,
+            arguments: ["-c", "if {[catch {spawn /usr/bin/true}]} { exit 1 }; wait"]
+        ) else { return false }
+        return probe.successful
+    }()
 }
 
 /// Interoperability with the standard `age` CLI (age-encryption.org, v1.3.x).
@@ -27,8 +34,9 @@ enum InteropTooling {
 /// - Passphrase tests additionally need `/usr/bin/expect`, because the CLI
 ///   deliberately only reads passphrases from a terminal.
 ///
-/// When a tool is missing the tests are reported as *skipped*, not passed;
-/// install with `brew install age` to run the full suite.
+/// When a tool is missing (or no pty can be allocated for `expect`) the
+/// tests are reported as *skipped*, not passed; install with
+/// `brew install age` to run the full suite.
 @Suite(.serialized)
 struct CLIInteropTests {
 
@@ -50,7 +58,7 @@ struct CLIInteropTests {
             arguments: ["-d", "-i", "key.txt", "-o", "out.bin", "encrypted.age"],
             currentDirectory: scratch.path
         )
-        #expect(output.successful, "age CLI failed: \(String(data: output.stderr, encoding: .utf8) ?? "")")
+        try #require(output.successful, "age CLI failed: \(String(data: output.stderr, encoding: .utf8) ?? "")")
         #expect(try scratch.read("out.bin") == plaintext)
     }
 
@@ -69,7 +77,7 @@ struct CLIInteropTests {
             arguments: ["-e", "-r", identity.recipient.serialized, "-o", "encrypted.age", "plain.bin"],
             currentDirectory: scratch.path
         )
-        #expect(output.successful, "age CLI failed: \(String(data: output.stderr, encoding: .utf8) ?? "")")
+        try #require(output.successful, "age CLI failed: \(String(data: output.stderr, encoding: .utf8) ?? "")")
 
         let encrypted = try scratch.read("encrypted.age")
         #expect(try Age.decrypt(encrypted, identities: [identity]) == plaintext)
@@ -96,7 +104,7 @@ struct CLIInteropTests {
             arguments: ["decrypt.exp"],
             currentDirectory: scratch.path
         )
-        #expect(output.successful, "expect/age failed: \(String(data: output.stderr, encoding: .utf8) ?? "")")
+        try #require(output.successful, "expect/age failed: \(String(data: output.stderr, encoding: .utf8) ?? "")")
         #expect(try scratch.read("out.bin") == plaintext)
     }
 
@@ -121,7 +129,7 @@ struct CLIInteropTests {
             arguments: ["encrypt.exp"],
             currentDirectory: scratch.path
         )
-        #expect(output.successful, "expect/age failed: \(String(data: output.stderr, encoding: .utf8) ?? "")")
+        try #require(output.successful, "expect/age failed: \(String(data: output.stderr, encoding: .utf8) ?? "")")
 
         let encrypted = try scratch.read("encrypted.age")
         #expect(try Age.decrypt(encrypted, passphrase: passphrase) == plaintext)
@@ -152,7 +160,7 @@ struct CLIInteropTests {
             arguments: ["-d", "-i", "key.txt", "-o", "out.bin", "encrypted.age"],
             currentDirectory: scratch.path
         )
-        #expect(output.successful, "age CLI failed: \(String(data: output.stderr, encoding: .utf8) ?? "")")
+        try #require(output.successful, "age CLI failed: \(String(data: output.stderr, encoding: .utf8) ?? "")")
         #expect(try scratch.read("out.bin") == plaintext)
     }
 
@@ -170,7 +178,7 @@ struct CLIInteropTests {
             arguments: ["-a", "-e", "-r", identity.recipient.serialized, "-o", "encrypted.age", "plain.bin"],
             currentDirectory: scratch.path
         )
-        #expect(output.successful, "age CLI failed: \(String(data: output.stderr, encoding: .utf8) ?? "")")
+        try #require(output.successful, "age CLI failed: \(String(data: output.stderr, encoding: .utf8) ?? "")")
 
         let encrypted = try scratch.read("encrypted.age")
         #expect(String(data: encrypted, encoding: .utf8)?.hasPrefix("-----BEGIN AGE ENCRYPTED FILE-----") == true)
@@ -201,7 +209,7 @@ struct CLIInteropTests {
             arguments: ["decrypt.exp"],
             currentDirectory: scratch.path
         )
-        #expect(output.successful, "expect/age failed: \(String(data: output.stderr, encoding: .utf8) ?? "")")
+        try #require(output.successful, "expect/age failed: \(String(data: output.stderr, encoding: .utf8) ?? "")")
         #expect(try scratch.read("out.bin") == plaintext)
     }
 
@@ -224,7 +232,7 @@ struct CLIInteropTests {
             arguments: ["encrypt.exp"],
             currentDirectory: scratch.path
         )
-        #expect(output.successful, "expect/age failed: \(String(data: output.stderr, encoding: .utf8) ?? "")")
+        try #require(output.successful, "expect/age failed: \(String(data: output.stderr, encoding: .utf8) ?? "")")
 
         let encrypted = try scratch.read("encrypted.age")
         #expect(try Age.decrypt(encrypted, passphrase: passphrase) == plaintext)
@@ -246,7 +254,7 @@ struct CLIInteropTests {
             arguments: ["-a", "-e", "-r", identity.recipient.serialized, "-o", "cli-armored.age", "plain.bin"],
             currentDirectory: scratch.path
         )
-        #expect(output.successful, "age CLI failed: \(String(data: output.stderr, encoding: .utf8) ?? "")")
+        try #require(output.successful, "age CLI failed: \(String(data: output.stderr, encoding: .utf8) ?? "")")
         let cliArmored = try #require(String(data: try scratch.read("cli-armored.age"), encoding: .utf8))
         try scratch.write(try Age.dearmor(cliArmored), to: "dearmored.age")
         output = try ProcessRunner.run(
@@ -254,7 +262,7 @@ struct CLIInteropTests {
             arguments: ["-d", "-i", "key.txt", "-o", "out1.bin", "dearmored.age"],
             currentDirectory: scratch.path
         )
-        #expect(output.successful, "age CLI failed: \(String(data: output.stderr, encoding: .utf8) ?? "")")
+        try #require(output.successful, "age CLI failed: \(String(data: output.stderr, encoding: .utf8) ?? "")")
         #expect(try scratch.read("out1.bin") == plaintext)
 
         // CLI binary file -> AgeSwift.armor -> CLI decrypts the text.
@@ -263,14 +271,14 @@ struct CLIInteropTests {
             arguments: ["-e", "-r", identity.recipient.serialized, "-o", "cli-binary.age", "plain.bin"],
             currentDirectory: scratch.path
         )
-        #expect(output.successful, "age CLI failed: \(String(data: output.stderr, encoding: .utf8) ?? "")")
+        try #require(output.successful, "age CLI failed: \(String(data: output.stderr, encoding: .utf8) ?? "")")
         try scratch.write(Data(try Age.armor(try scratch.read("cli-binary.age")).utf8), to: "armored-by-ageswift.age")
         output = try ProcessRunner.run(
             executable: age,
             arguments: ["-d", "-i", "key.txt", "-o", "out2.bin", "armored-by-ageswift.age"],
             currentDirectory: scratch.path
         )
-        #expect(output.successful, "age CLI failed: \(String(data: output.stderr, encoding: .utf8) ?? "")")
+        try #require(output.successful, "age CLI failed: \(String(data: output.stderr, encoding: .utf8) ?? "")")
         #expect(try scratch.read("out2.bin") == plaintext)
     }
 
