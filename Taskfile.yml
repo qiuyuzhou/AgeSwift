@@ -86,8 +86,16 @@ tasks:
         set -euo pipefail
         CHECKSUM="$(cat {{.CHECKSUM_FILE}})"
         URL="https://github.com/{{.REPO}}/releases/download/{{.VERSION}}/{{.XCFRAMEWORK}}.zip"
-        perl -0pi -e 's{(let releasedBinaryURL = ")[^"]*(")}{$1'"$URL"'$2}' Package.swift
-        perl -0pi -e 's{(let releasedBinaryChecksum = ")[^"]*(")}{$1'"$CHECKSUM"'$2}' Package.swift
+        # Guard against anything unexpected (e.g. extra stdout lines) polluting the value
+        [[ "$CHECKSUM" =~ ^[0-9a-f]{64}$ ]] \
+          || { echo "unexpected checksum value: '$CHECKSUM'"; exit 1; }
+        # Whole-line rewrite (anchored on the `let` prefix): no capture groups,
+        # no escaping ambiguity — values are checksums/URLs without | or &.
+        sed \
+          -e "s|^let releasedBinaryURL = .*|let releasedBinaryURL = \"$URL\"|" \
+          -e "s|^let releasedBinaryChecksum = .*|let releasedBinaryChecksum = \"$CHECKSUM\"|" \
+          Package.swift > Package.swift.tmp
+        mv Package.swift.tmp Package.swift
         # Verify the substitutions actually happened (fails here if the manifest shape drifts)
         grep -F "let releasedBinaryURL = \"$URL\"" Package.swift
         grep -F "let releasedBinaryChecksum = \"$CHECKSUM\"" Package.swift
