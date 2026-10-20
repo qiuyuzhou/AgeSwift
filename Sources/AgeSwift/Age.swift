@@ -17,7 +17,6 @@ public enum Age {
     /// key file) can decrypt the result.
     /// - Throws: ``AgeError/invalidRecipient`` if a recipient string is
     ///   malformed; ``AgeError/encryptionFailed`` on backend failure.
-    @discardableResult
     public static func encrypt(_ plaintext: Data, recipients: [AgeRecipient]) throws -> Data {
         try encryptImpl(plaintext, recipients: recipients, format: AGESWIFT_FORMAT_BINARY)
     }
@@ -29,7 +28,6 @@ public enum Age {
     /// ``decrypt(_:identities:)`` — both representations are accepted.
     /// - Throws: ``AgeError/invalidRecipient`` if a recipient string is
     ///   malformed; ``AgeError/encryptionFailed`` on backend failure.
-    @discardableResult
     public static func encryptArmored(_ plaintext: Data, recipients: [AgeRecipient]) throws -> String {
         try AgeFFI.textFromBytes(
             try encryptImpl(plaintext, recipients: recipients, format: AGESWIFT_FORMAT_ASCII_ARMOR)
@@ -39,7 +37,6 @@ public enum Age {
     /// Encrypts `plaintext` with a passphrase using age's standard scrypt
     /// recipient and its default (~1 second) work factor.
     /// - Throws: ``AgeError/encryptionFailed`` on backend failure.
-    @discardableResult
     public static func encrypt(_ plaintext: Data, passphrase: String) throws -> Data {
         try encryptImpl(plaintext, passphrase: passphrase, format: AGESWIFT_FORMAT_BINARY)
     }
@@ -49,7 +46,6 @@ public enum Age {
     /// The result decrypts with any age implementation, including
     /// ``decrypt(_:passphrase:)`` — both representations are accepted.
     /// - Throws: ``AgeError/encryptionFailed`` on backend failure.
-    @discardableResult
     public static func encryptArmored(_ plaintext: Data, passphrase: String) throws -> String {
         try AgeFFI.textFromBytes(
             try encryptImpl(plaintext, passphrase: passphrase, format: AGESWIFT_FORMAT_ASCII_ARMOR)
@@ -115,7 +111,6 @@ public enum Age {
     ///   ``AgeError/noMatchingKey`` if none of the identities matches;
     ///   ``AgeError/decryptionFailed`` if the payload is corrupted or
     ///   truncated.
-    @discardableResult
     public static func decrypt(_ ciphertext: Data, identities: [AgeIdentity]) throws -> Data {
         guard !identities.isEmpty else {
             throw AgeError.invalidArgument("at least one identity is required")
@@ -146,7 +141,6 @@ public enum Age {
     ///   ``AgeError/noMatchingKey`` if none of the identities matches;
     ///   ``AgeError/decryptionFailed`` if the payload is corrupted or
     ///   truncated.
-    @discardableResult
     public static func decrypt(_ ciphertext: String, identities: [AgeIdentity]) throws -> Data {
         try decrypt(Data(ciphertext.utf8), identities: identities)
     }
@@ -160,7 +154,6 @@ public enum Age {
     ///   ``AgeError/noMatchingKey`` on a wrong passphrase;
     ///   ``AgeError/decryptionFailed`` if the payload is corrupted or
     ///   truncated.
-    @discardableResult
     public static func decrypt(_ ciphertext: Data, passphrase: String) throws -> Data {
         try AgeFFI.withBytes(of: ciphertext) { bytes, count in
             try passphrase.withCString { passphraseCString in
@@ -184,7 +177,6 @@ public enum Age {
     ///   ``AgeError/noMatchingKey`` on a wrong passphrase;
     ///   ``AgeError/decryptionFailed`` if the payload is corrupted or
     ///   truncated.
-    @discardableResult
     public static func decrypt(_ ciphertext: String, passphrase: String) throws -> Data {
         try decrypt(Data(ciphertext.utf8), passphrase: passphrase)
     }

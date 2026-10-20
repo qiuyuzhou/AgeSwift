@@ -12,7 +12,6 @@ extension Age {
     /// ``AgeError/invalidFormat``. No keys, passphrases, or plaintext are
     /// required: converting between the two representations never decrypts.
     /// - Throws: ``AgeError/invalidFormat`` if `binary` is not an age file.
-    @discardableResult
     public static func armor(_ binary: Data) throws -> String {
         try AgeFFI.withBytes(of: binary) { bytes, count in
             var output: UnsafeMutablePointer<CChar>?
@@ -36,7 +35,6 @@ extension Age {
     /// structurally validated before it is returned; nothing is decrypted.
     /// - Throws: ``AgeError/invalidFormat`` if `armored` is not a valid
     ///   armored age file.
-    @discardableResult
     public static func dearmor(_ armored: String) throws -> Data {
         try armored.withCString { armoredCString in
             var output = ageswift_bytes()
