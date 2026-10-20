@@ -1,0 +1,7 @@
+#!/bin/sh
+# Block the commit when staged Rust files make the crate fail rustfmt.
+# Enable per clone with: git config core.hooksPath Scripts/git-hooks
+set -e
+if git diff --cached --name-only --diff-filter=ACM | grep -q '\.rs$'; then
+  cargo fmt --manifest-path Rust/age-swift-ffi/Cargo.toml --check
+fi
