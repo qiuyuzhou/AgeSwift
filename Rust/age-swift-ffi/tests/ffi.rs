@@ -69,7 +69,11 @@ fn generate() -> (String, String) {
     (take_string(identity), take_string(recipient))
 }
 
-fn encrypt_to_recipients(plaintext: &[u8], recipients: &[&str]) -> AgeswiftStatus {
+fn encrypt_to_recipients(
+    plaintext: &[u8],
+    recipients: &[&str],
+    format: AgeswiftFormat,
+) -> AgeswiftStatus {
     let mut ciphertext = zeroed_bytes();
     let mut error = ptr::null_mut();
     let c_recipients: Vec<CString> = recipients
@@ -87,20 +91,32 @@ fn encrypt_to_recipients(plaintext: &[u8], recipients: &[&str]) -> AgeswiftStatu
         plain_len,
         ptrs.as_ptr(),
         ptrs.len(),
+        format,
         &mut ciphertext,
         &mut error,
     );
     if status == AgeswiftStatus::Ok {
         assert_ok(status, error);
         let bytes = take_bytes(ciphertext);
-        assert!(bytes.starts_with(b"age-encryption.org/v1\n"));
+        match format {
+            AgeswiftFormat::Binary => {
+                assert!(bytes.starts_with(b"age-encryption.org/v1\n"));
+            }
+            AgeswiftFormat::AsciiArmor => {
+                assert!(bytes.starts_with(b"-----BEGIN AGE ENCRYPTED FILE-----"));
+            }
+        }
     } else {
         assert!(ciphertext.ptr.is_null() && ciphertext.len == 0);
     }
     status
 }
 
-fn encrypt_for_assertion(plaintext: &[u8], recipients: &[&str]) -> Vec<u8> {
+fn encrypt_for_assertion(
+    plaintext: &[u8],
+    recipients: &[&str],
+    format: AgeswiftFormat,
+) -> Vec<u8> {
     let mut ciphertext = zeroed_bytes();
     let mut error = ptr::null_mut();
     let c_recipients: Vec<CString> = recipients
@@ -118,6 +134,7 @@ fn encrypt_for_assertion(plaintext: &[u8], recipients: &[&str]) -> Vec<u8> {
         plain_len,
         ptrs.as_ptr(),
         ptrs.len(),
+        format,
         &mut ciphertext,
         &mut error,
     );
@@ -155,7 +172,11 @@ fn decrypt_with_identities(
     }
 }
 
-fn encrypt_passphrase_for_assertion(plaintext: &[u8], passphrase: &str) -> Vec<u8> {
+fn encrypt_passphrase_for_assertion(
+    plaintext: &[u8],
+    passphrase: &str,
+    format: AgeswiftFormat,
+) -> Vec<u8> {
     let mut ciphertext = zeroed_bytes();
     let mut error = ptr::null_mut();
     let c_passphrase = CString::new(passphrase).expect("passphrase contains no NUL");
@@ -163,6 +184,7 @@ fn encrypt_passphrase_for_assertion(plaintext: &[u8], passphrase: &str) -> Vec<u
         plaintext.as_ptr(),
         plaintext.len(),
         c_passphrase.as_ptr(),
+        format,
         &mut ciphertext,
         &mut error,
     );
@@ -264,7 +286,7 @@ fn null_string_pointers_are_rejected() {
 fn x25519_roundtrip() {
     let (identity, recipient) = generate();
     let plaintext = b"hello from the age-swift-ffi tests";
-    let ciphertext = encrypt_for_assertion(plaintext, &[&recipient]);
+    let ciphertext = encrypt_for_assertion(plaintext, &[&recipient], AgeswiftFormat::Binary);
     assert_ne!(&ciphertext[..], &plaintext[..]);
     let decrypted = decrypt_with_identities(&ciphertext, &[&identity]).expect("decrypts");
     assert_eq!(decrypted, plaintext);
@@ -277,7 +299,8 @@ fn x25519_multiple_recipients_each_decrypt() {
     let (identity_c, _) = generate(); // not a recipient of this file
 
     let plaintext = b"multi-recipient payload";
-    let ciphertext = encrypt_for_assertion(plaintext, &[&recipient_a, &recipient_b]);
+    let ciphertext =
+        encrypt_for_assertion(plaintext, &[&recipient_a, &recipient_b], AgeswiftFormat::Binary);
 
     assert_eq!(
         decrypt_with_identities(&ciphertext, &[&identity_a]).expect("A decrypts"),
@@ -303,8 +326,8 @@ fn x25519_multiple_recipients_each_decrypt() {
 #[test]
 fn x25519_two_encryptions_differ() {
     let (_, recipient) = generate();
-    let one = encrypt_for_assertion(b"same message", &[&recipient]);
-    let two = encrypt_for_assertion(b"same message", &[&recipient]);
+    let one = encrypt_for_assertion(b"same message", &[&recipient], AgeswiftFormat::Binary);
+    let two = encrypt_for_assertion(b"same message", &[&recipient], AgeswiftFormat::Binary);
     assert_ne!(one, two, "file keys and ephemeral keys must be random");
 }
 
@@ -312,18 +335,44 @@ fn x25519_two_encryptions_differ() {
 fn x25519_empty_and_binary_plaintext() {
     let (identity, recipient) = generate();
 
-    let empty = encrypt_for_assertion(&[], &[&recipient]);
+    let empty = encrypt_for_assertion(&[], &[&recipient], AgeswiftFormat::Binary);
     assert_eq!(
         decrypt_with_identities(&empty, &[&identity]).expect("empty decrypts"),
         Vec::<u8>::new()
     );
 
     let binary: Vec<u8> = (0..=255u8).cycle().take(100_000).collect();
-    let encrypted = encrypt_for_assertion(&binary, &[&recipient]);
+    let encrypted = encrypt_for_assertion(&binary, &[&recipient], AgeswiftFormat::Binary);
     assert_eq!(
         decrypt_with_identities(&encrypted, &[&identity]).expect("binary decrypts"),
         binary
     );
+}
+
+// ------------------------------------------------------------ armor
+
+#[test]
+fn armored_x25519_roundtrip() {
+    let (identity, recipient) = generate();
+    let plaintext = b"armored hello";
+    let ciphertext = encrypt_for_assertion(plaintext, &[&recipient], AgeswiftFormat::AsciiArmor);
+
+    // The output is pure ASCII with the armor markers, and base64 payload
+    // lines are wrapped at 64 columns (all but the final payload line).
+    let text = std::str::from_utf8(&ciphertext).expect("armored output is ASCII");
+    assert!(text.starts_with("-----BEGIN AGE ENCRYPTED FILE-----\n"));
+    assert!(text.contains("\n-----END AGE ENCRYPTED FILE-----"));
+    let lines: Vec<&str> = text.lines().collect();
+    let payload = &lines[1..lines.len() - 1];
+    assert!(!payload.is_empty());
+    for line in &payload[..payload.len() - 1] {
+        assert_eq!(line.len(), 64, "non-final payload line must be 64 columns");
+    }
+    assert!(payload[payload.len() - 1].len() <= 64);
+
+    // Decrypt transparently accepts the armored form.
+    let decrypted = decrypt_with_identities(&ciphertext, &[&identity]).expect("decrypts armored");
+    assert_eq!(decrypted, plaintext);
 }
 
 // ------------------------------------------------------------ passphrase
@@ -331,7 +380,11 @@ fn x25519_empty_and_binary_plaintext() {
 #[test]
 fn scrypt_roundtrip_and_wrong_passphrase() {
     let plaintext = b"passphrase secret";
-    let ciphertext = encrypt_passphrase_for_assertion(plaintext, "correct horse battery staple");
+    let ciphertext = encrypt_passphrase_for_assertion(
+        plaintext,
+        "correct horse battery staple",
+        AgeswiftFormat::Binary,
+    );
 
     let decrypted = decrypt_with_passphrase(&ciphertext, "correct horse battery staple")
         .expect("right passphrase decrypts");
@@ -347,7 +400,7 @@ fn scrypt_roundtrip_and_wrong_passphrase() {
 
 #[test]
 fn scrypt_empty_plaintext() {
-    let ciphertext = encrypt_passphrase_for_assertion(&[], "pw");
+    let ciphertext = encrypt_passphrase_for_assertion(&[], "pw", AgeswiftFormat::Binary);
     assert_eq!(
         decrypt_with_passphrase(&ciphertext, "pw").expect("empty decrypts"),
         Vec::<u8>::new()
@@ -355,9 +408,30 @@ fn scrypt_empty_plaintext() {
 }
 
 #[test]
+fn armored_scrypt_roundtrip_and_wrong_passphrase() {
+    let plaintext = b"armored passphrase secret";
+    let ciphertext = encrypt_passphrase_for_assertion(
+        plaintext,
+        "correct horse battery staple",
+        AgeswiftFormat::AsciiArmor,
+    );
+    let text = std::str::from_utf8(&ciphertext).expect("armored output is ASCII");
+    assert!(text.starts_with("-----BEGIN AGE ENCRYPTED FILE-----\n"));
+
+    let decrypted = decrypt_with_passphrase(&ciphertext, "correct horse battery staple")
+        .expect("decrypts armored passphrase file");
+    assert_eq!(decrypted, plaintext);
+
+    assert_eq!(
+        decrypt_with_passphrase(&ciphertext, "wrong passphrase"),
+        Err(AgeswiftStatus::NoMatchingKey)
+    );
+}
+
+#[test]
 fn passphrase_file_is_not_opened_by_x25519_identities() {
     let (identity, _) = generate();
-    let ciphertext = encrypt_passphrase_for_assertion(b"locked", "pw");
+    let ciphertext = encrypt_passphrase_for_assertion(b"locked", "pw", AgeswiftFormat::Binary);
     assert_eq!(
         decrypt_with_identities(&ciphertext, &[&identity]),
         Err(AgeswiftStatus::NoMatchingKey)
@@ -378,7 +452,7 @@ fn garbage_input_is_invalid_format() {
 #[test]
 fn truncated_and_corrupted_files_fail() {
     let (identity, recipient) = generate();
-    let ciphertext = encrypt_for_assertion(b"some payload to corrupt", &[&recipient]);
+    let ciphertext = encrypt_for_assertion(b"some payload to corrupt", &[&recipient], AgeswiftFormat::Binary);
 
     // Truncated header.
     let truncated = &ciphertext[..10];
@@ -413,6 +487,207 @@ fn invalid_utf8_identity_is_rejected() {
     assert_status(AgeswiftStatus::InvalidArgument, status, error);
 }
 
+// ------------------------------------------------------------ armor conversion
+
+fn armor_bytes(binary: &[u8]) -> Result<String, AgeswiftStatus> {
+    let mut armored = ptr::null_mut();
+    let mut error = ptr::null_mut();
+    let (ptr_, len) = if binary.is_empty() {
+        (ptr::null(), 0)
+    } else {
+        (binary.as_ptr(), binary.len())
+    };
+    let status = ageswift_armor(ptr_, len, &mut armored, &mut error);
+    if status == AgeswiftStatus::Ok {
+        assert_ok(status, error);
+        Ok(take_string(armored))
+    } else {
+        if !error.is_null() {
+            ageswift_free_string(error);
+        }
+        Err(status)
+    }
+}
+
+fn dearmor_str(armored: &str) -> Result<Vec<u8>, AgeswiftStatus> {
+    let mut binary = zeroed_bytes();
+    let mut error = ptr::null_mut();
+    let c_armored = CString::new(armored).expect("test input contains no NUL");
+    let status = ageswift_dearmor(c_armored.as_ptr(), &mut binary, &mut error);
+    if status == AgeswiftStatus::Ok {
+        assert_ok(status, error);
+        Ok(take_bytes(binary))
+    } else {
+        if !error.is_null() {
+            ageswift_free_string(error);
+        }
+        Err(status)
+    }
+}
+
+#[test]
+fn armor_and_dearmor_roundtrip() {
+    let (identity, recipient) = generate();
+    let binary = encrypt_for_assertion(b"convert me", &[&recipient], AgeswiftFormat::Binary);
+
+    let armored = armor_bytes(&binary).expect("armors a valid binary file");
+    assert!(armored.starts_with("-----BEGIN AGE ENCRYPTED FILE-----\n"));
+    assert!(armored.contains("-----END AGE ENCRYPTED FILE-----"));
+
+    // Byte-exact inverse, and the results decrypt as usual.
+    assert_eq!(dearmor_str(&armored).expect("dearmors"), binary);
+    assert_eq!(
+        decrypt_with_identities(binary.as_slice(), &[&identity]).expect("binary decrypts"),
+        b"convert me"
+    );
+    assert_eq!(
+        decrypt_with_identities(armored.as_bytes(), &[&identity]).expect("armored decrypts"),
+        b"convert me"
+    );
+
+    // Whitespace around the block is tolerated (paste-friendly).
+    let padded = format!("\n \t\n {armored} \n\t \n");
+    assert_eq!(dearmor_str(&padded).expect("padded dearmors"), binary);
+}
+
+#[test]
+fn armor_rejects_non_age_input() {
+    assert_eq!(
+        armor_bytes(b"not an age file at all"),
+        Err(AgeswiftStatus::InvalidFormat)
+    );
+    assert_eq!(armor_bytes(&[]), Err(AgeswiftStatus::InvalidFormat));
+
+    // Armored text fed back into armor is not a binary age file either.
+    let (_, recipient) = generate();
+    let armored = armor_bytes(&encrypt_for_assertion(b"x", &[&recipient], AgeswiftFormat::Binary))
+        .expect("armors");
+    assert_eq!(
+        armor_bytes(armored.as_bytes()),
+        Err(AgeswiftStatus::InvalidFormat)
+    );
+}
+
+#[test]
+fn dearmor_is_strict_about_input_format() {
+    // Plain text without markers.
+    assert_eq!(
+        dearmor_str("just some text, no markers"),
+        Err(AgeswiftStatus::InvalidFormat)
+    );
+    // A binary age file (header prefix) is not armored input.
+    assert_eq!(
+        dearmor_str("age-encryption.org/v1\n-> X25519 fake"),
+        Err(AgeswiftStatus::InvalidFormat)
+    );
+
+    // Truncated armor (END marker dropped).
+    let (_, recipient) = generate();
+    let binary = encrypt_for_assertion(b"payload", &[&recipient], AgeswiftFormat::Binary);
+    let armored = armor_bytes(&binary).expect("armors");
+    let truncated: String = armored
+        .lines()
+        .filter(|l| !l.starts_with("-----END"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert_eq!(
+        dearmor_str(&truncated),
+        Err(AgeswiftStatus::InvalidFormat)
+    );
+
+    // NULL input is an argument error (string pointer contract).
+    let mut out = zeroed_bytes();
+    let mut error = ptr::null_mut();
+    let status = ageswift_dearmor(ptr::null(), &mut out, &mut error);
+    assert_status(AgeswiftStatus::InvalidArgument, status, error);
+}
+
+// ------------------------------------------------------------ upstream testkit vectors
+
+/// Minimal parser for the upstream age testkit format: metadata lines up to
+/// the first blank line, then the byte-exact file content.
+struct TestVector {
+    expect_success: bool,
+    payload_sha256: Option<Vec<u8>>,
+    identity: String,
+    content: Vec<u8>,
+}
+
+fn parse_testkit(name: &str) -> TestVector {
+    let path = format!("{}/tests/testdata/{name}", env!("CARGO_MANIFEST_DIR"));
+    let raw = std::fs::read(path).expect("vector file exists");
+    let separator = raw
+        .windows(2)
+        .position(|w| w == b"\n\n")
+        .expect("metadata separator");
+    let (metadata, content) = raw.split_at(separator + 2);
+    let mut vector = TestVector {
+        expect_success: false,
+        payload_sha256: None,
+        identity: String::new(),
+        content: content.to_vec(),
+    };
+    for line in String::from_utf8_lossy(metadata).lines() {
+        if let Some(rest) = line.strip_prefix("expect: ") {
+            vector.expect_success = rest == "success";
+        } else if let Some(rest) = line.strip_prefix("payload: ") {
+            vector.payload_sha256 = Some(
+                rest.as_bytes()
+                    .chunks(2)
+                    .map(|pair| {
+                        u8::from_str_radix(std::str::from_utf8(pair).expect("hex pair"), 16)
+                            .expect("hex byte")
+                    })
+                    .collect(),
+            );
+        } else if let Some(rest) = line.strip_prefix("identity: ") {
+            vector.identity = rest.to_owned();
+        }
+    }
+    vector
+}
+
+fn run_testkit(name: &str) {
+    let vector = parse_testkit(name);
+    let result = decrypt_with_identities(&vector.content, &[&vector.identity]);
+    if vector.expect_success {
+        let plaintext = result.unwrap_or_else(|status| panic!("{name}: expected success, got {status:?}"));
+        use sha2::{Digest, Sha256};
+        let digest = Sha256::digest(&plaintext).to_vec();
+        assert_eq!(
+            Some(digest),
+            vector.payload_sha256,
+            "{name}: decrypted payload hash mismatch"
+        );
+    } else {
+        assert_eq!(
+            result,
+            Err(AgeswiftStatus::InvalidFormat),
+            "{name}: expected InvalidFormat"
+        );
+    }
+}
+
+#[test]
+fn testkit_armor_strictness_rejections() {
+    // Non-whitespace garbage before or after the block.
+    run_testkit("armor_garbage_leading");
+    run_testkit("armor_garbage_trailing");
+    // Non-canonical base64 and over-long lines.
+    run_testkit("armor_not_canonical");
+    run_testkit("armor_long_line");
+}
+
+#[test]
+fn testkit_armor_acceptances() {
+    // CRLF line endings are valid armor.
+    run_testkit("armor_crlf");
+    // Whitespace around the block: accepted by the age format spec and the
+    // Go CLI; AgeSwift strips it explicitly because the Rust ArmoredReader
+    // alone would not detect the armor.
+    run_testkit("armor_whitespace_outside");
+}
+
 // ------------------------------------------------------------ pointer contracts
 
 #[test]
@@ -420,7 +695,7 @@ fn empty_buffers_accept_null_pointers() {
     let (_, recipient) = generate();
     // NULL + zero length is a legal empty plaintext.
     assert_eq!(
-        encrypt_to_recipients(&[], &[&recipient]),
+        encrypt_to_recipients(&[], &[&recipient], AgeswiftFormat::Binary),
         AgeswiftStatus::Ok
     );
 
@@ -434,6 +709,7 @@ fn empty_buffers_accept_null_pointers() {
         5,
         ptrs.as_ptr(),
         1,
+        AgeswiftFormat::Binary,
         &mut ciphertext,
         &mut error,
     );
@@ -446,6 +722,7 @@ fn empty_buffers_accept_null_pointers() {
         0,
         ptrs.as_ptr(),
         1,
+        AgeswiftFormat::Binary,
         ptr::null_mut(),
         &mut error,
     );
@@ -456,8 +733,15 @@ fn empty_buffers_accept_null_pointers() {
 fn empty_recipient_and_identity_lists_are_rejected() {
     let mut error = ptr::null_mut();
     let mut ciphertext = zeroed_bytes();
-    let status =
-        ageswift_encrypt_to_recipients(ptr::null(), 0, ptr::null(), 0, &mut ciphertext, &mut error);
+    let status = ageswift_encrypt_to_recipients(
+        ptr::null(),
+        0,
+        ptr::null(),
+        0,
+        AgeswiftFormat::Binary,
+        &mut ciphertext,
+        &mut error,
+    );
     assert_status(AgeswiftStatus::InvalidArgument, status, error);
 
     let mut plaintext = zeroed_bytes();
@@ -484,6 +768,7 @@ fn null_error_out_is_safe() {
         0,
         ptrs.as_ptr(),
         1,
+        AgeswiftFormat::Binary,
         &mut ciphertext,
         ptr::null_mut(),
     );
@@ -497,6 +782,7 @@ fn null_error_out_is_safe() {
         0,
         ptrs.as_ptr(),
         1,
+        AgeswiftFormat::Binary,
         &mut ciphertext,
         ptr::null_mut(),
     );

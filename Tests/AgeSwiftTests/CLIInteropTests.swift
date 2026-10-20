@@ -131,6 +131,149 @@ struct CLIInteropTests {
         }
     }
 
+    // ------------------------------------------------------------ armor interop
+
+    @Test(.enabled(if: InteropTooling.agePath != nil))
+    func ageswiftArmoredEncryptsAgeCLIDecrypts() throws {
+        let age = try #require(InteropTooling.agePath).description
+        let scratch = try ScratchDirectory()
+
+        let identity = try AgeIdentity.generate()
+        let plaintext = Data("armored by AgeSwift, decrypted by the age CLI".utf8)
+
+        let armored = try Age.encryptArmored(plaintext, recipients: [identity.recipient])
+        #expect(armored.hasPrefix("-----BEGIN AGE ENCRYPTED FILE-----"))
+        try scratch.write(Data(armored.utf8), to: "encrypted.age")
+        try scratch.write(Data(identity.serialized.utf8), to: "key.txt")
+
+        // `age -d` transparently detects the armor, same as AgeSwift.
+        let output = try ProcessRunner.run(
+            executable: age,
+            arguments: ["-d", "-i", "key.txt", "-o", "out.bin", "encrypted.age"],
+            currentDirectory: scratch.path
+        )
+        #expect(output.successful, "age CLI failed: \(String(data: output.stderr, encoding: .utf8) ?? "")")
+        #expect(try scratch.read("out.bin") == plaintext)
+    }
+
+    @Test(.enabled(if: InteropTooling.agePath != nil))
+    func ageCLIArmoredEncryptsAgeswiftDecrypts() throws {
+        let age = try #require(InteropTooling.agePath).description
+        let scratch = try ScratchDirectory()
+
+        let identity = try AgeIdentity.generate()
+        let plaintext = Data("armored by the age CLI, decrypted by AgeSwift".utf8)
+        try scratch.write(plaintext, to: "plain.bin")
+
+        let output = try ProcessRunner.run(
+            executable: age,
+            arguments: ["-a", "-e", "-r", identity.recipient.serialized, "-o", "encrypted.age", "plain.bin"],
+            currentDirectory: scratch.path
+        )
+        #expect(output.successful, "age CLI failed: \(String(data: output.stderr, encoding: .utf8) ?? "")")
+
+        let encrypted = try scratch.read("encrypted.age")
+        #expect(String(data: encrypted, encoding: .utf8)?.hasPrefix("-----BEGIN AGE ENCRYPTED FILE-----") == true)
+        // Both entry points accept the CLI's armored output.
+        #expect(try Age.decrypt(encrypted, identities: [identity]) == plaintext)
+        let asText = try #require(String(data: encrypted, encoding: .utf8))
+        #expect(try Age.decrypt(asText, identities: [identity]) == plaintext)
+    }
+
+    @Test(.enabled(if: InteropTooling.agePath != nil && InteropTooling.expectAvailable))
+    func ageswiftArmoredPassphraseEncryptsAgeCLIDecrypts() throws {
+        let age = try #require(InteropTooling.agePath).description
+        let scratch = try ScratchDirectory()
+
+        let passphrase = "armored interop passphrase"
+        let plaintext = Data("armored passphrase file from AgeSwift to the age CLI".utf8)
+
+        let armored = try Age.encryptArmored(plaintext, passphrase: passphrase)
+        try scratch.write(Data(armored.utf8), to: "encrypted.age")
+
+        try scratch.write(Data(expectScript(execute: age,
+                                            arguments: ["-d", "-o", "out.bin", "encrypted.age"],
+                                            passphrase: passphrase).utf8),
+                          to: "decrypt.exp")
+
+        let output = try ProcessRunner.run(
+            executable: InteropTooling.expectPath,
+            arguments: ["decrypt.exp"],
+            currentDirectory: scratch.path
+        )
+        #expect(output.successful, "expect/age failed: \(String(data: output.stderr, encoding: .utf8) ?? "")")
+        #expect(try scratch.read("out.bin") == plaintext)
+    }
+
+    @Test(.enabled(if: InteropTooling.agePath != nil && InteropTooling.expectAvailable))
+    func ageCLIArmoredPassphraseEncryptsAgeswiftDecrypts() throws {
+        let age = try #require(InteropTooling.agePath).description
+        let scratch = try ScratchDirectory()
+
+        let passphrase = "another armored interop passphrase"
+        let plaintext = Data("armored passphrase file from the age CLI to AgeSwift".utf8)
+        try scratch.write(plaintext, to: "plain.bin")
+
+        try scratch.write(Data(expectScript(execute: age,
+                                            arguments: ["-a", "-e", "-p", "-o", "encrypted.age", "plain.bin"],
+                                            passphrase: passphrase).utf8),
+                          to: "encrypt.exp")
+
+        let output = try ProcessRunner.run(
+            executable: InteropTooling.expectPath,
+            arguments: ["encrypt.exp"],
+            currentDirectory: scratch.path
+        )
+        #expect(output.successful, "expect/age failed: \(String(data: output.stderr, encoding: .utf8) ?? "")")
+
+        let encrypted = try scratch.read("encrypted.age")
+        #expect(try Age.decrypt(encrypted, passphrase: passphrase) == plaintext)
+    }
+
+    @Test(.enabled(if: InteropTooling.agePath != nil))
+    func armorConversionInteropBothDirections() throws {
+        let age = try #require(InteropTooling.agePath).description
+        let scratch = try ScratchDirectory()
+
+        let identity = try AgeIdentity.generate()
+        let plaintext = Data("conversion interop payload".utf8)
+        try scratch.write(plaintext, to: "plain.bin")
+        try scratch.write(Data(identity.serialized.utf8), to: "key.txt")
+
+        // CLI armored file -> AgeSwift.dearmor -> CLI decrypts the binary.
+        var output = try ProcessRunner.run(
+            executable: age,
+            arguments: ["-a", "-e", "-r", identity.recipient.serialized, "-o", "cli-armored.age", "plain.bin"],
+            currentDirectory: scratch.path
+        )
+        #expect(output.successful, "age CLI failed: \(String(data: output.stderr, encoding: .utf8) ?? "")")
+        let cliArmored = try #require(String(data: try scratch.read("cli-armored.age"), encoding: .utf8))
+        try scratch.write(try Age.dearmor(cliArmored), to: "dearmored.age")
+        output = try ProcessRunner.run(
+            executable: age,
+            arguments: ["-d", "-i", "key.txt", "-o", "out1.bin", "dearmored.age"],
+            currentDirectory: scratch.path
+        )
+        #expect(output.successful, "age CLI failed: \(String(data: output.stderr, encoding: .utf8) ?? "")")
+        #expect(try scratch.read("out1.bin") == plaintext)
+
+        // CLI binary file -> AgeSwift.armor -> CLI decrypts the text.
+        output = try ProcessRunner.run(
+            executable: age,
+            arguments: ["-e", "-r", identity.recipient.serialized, "-o", "cli-binary.age", "plain.bin"],
+            currentDirectory: scratch.path
+        )
+        #expect(output.successful, "age CLI failed: \(String(data: output.stderr, encoding: .utf8) ?? "")")
+        try scratch.write(Data(try Age.armor(try scratch.read("cli-binary.age")).utf8), to: "armored-by-ageswift.age")
+        output = try ProcessRunner.run(
+            executable: age,
+            arguments: ["-d", "-i", "key.txt", "-o", "out2.bin", "armored-by-ageswift.age"],
+            currentDirectory: scratch.path
+        )
+        #expect(output.successful, "age CLI failed: \(String(data: output.stderr, encoding: .utf8) ?? "")")
+        #expect(try scratch.read("out2.bin") == plaintext)
+    }
+
     // ------------------------------------------------------------ helpers
 
     /// The CLI reads passphrases only from a terminal, so we drive it through

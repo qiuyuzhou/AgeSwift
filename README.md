@@ -19,9 +19,11 @@ file-format logic in Swift.
   (`x86_64-apple-darwin`). The architecture permits future iOS support; iOS
   packaging is intentionally out of scope for the initial milestone.
 - **Features:** X25519 recipient encryption, scrypt passphrase encryption,
-  in-memory `Data`-based API, binary (non-armored) age v1 files.
+  in-memory `Data`-based API, binary age v1 files, ASCII armor (armored
+  encryption, transparent auto-detection on decrypt, keyless armor/dearmor
+  conversion).
 - **Not implemented (by design, initial milestone):** SSH keys, plugins,
-  ASCII armor, Keychain integration, streaming/file APIs, async APIs.
+  Keychain integration, streaming/file APIs, async APIs.
 
 ## Architecture
 
@@ -133,6 +135,36 @@ let decrypted = try Age.decrypt(encrypted, passphrase: "a strong passphrase")
 Passphrase operations deliberately cost about a second of CPU — keep them off
 the main thread.
 
+### ASCII armor
+
+age's ASCII armor is a PEM-like, base64-encoded representation of an age file
+(the `age -a` CLI format) for text channels: emails, chats, ticket systems.
+AgeSwift encrypts to it, decrypts it, and converts between representations —
+no keys are involved in conversion.
+
+```swift
+// Encrypt straight to pasteable text (both modes support it):
+let armored = try Age.encryptArmored(plaintext, recipients: [recipient])
+let armoredPassphrase = try Age.encryptArmored(plaintext, passphrase: "a strong passphrase")
+
+// Decrypt accepts pasted text directly; surrounding whitespace (the stray
+// newlines copied out of an email) is ignored. Binary input works too —
+// every decrypt entry point auto-detects the representation:
+let decrypted = try Age.decrypt(armored, identities: [identity])
+let viaBytes = try Age.decrypt(Data(armored.utf8), passphrase: "a strong passphrase")
+
+// Keyless conversion, validated in both directions:
+let text = try Age.armor(binaryAgeFile)   // binary age file -> String
+let binary = try Age.dearmor(text)        // String -> binary age file
+```
+
+`armor` and `dearmor` are strict: the input (and, for `dearmor`, the decoded
+output) must be a structurally valid age file, otherwise
+`.invalidFormat(String)` is thrown with the backend's explanation. Malformed
+armor — invalid base64, missing END marker, non-canonical encoding — fails
+with `.invalidFormat` everywhere, matching the upstream testkit semantics
+AgeSwift is tested against.
+
 ### Parsing existing keys
 
 ```swift
@@ -157,11 +189,16 @@ age -e -r age1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx -o encrypted.a
 # Passphrase mode (the CLI always prompts on the terminal):
 age -e -p -o encrypted.age plaintext.txt
 age -d -o plaintext.txt encrypted.age
+
+# ASCII armor (both directions, both key modes; every decrypt side
+# auto-detects the representation):
+age -a -e -r age1xxx... -o encrypted.age plaintext.txt  # then: Age.decrypt(...)
+# and: Age.encryptArmored(...) output, written to a file, decrypts with: age -d ...
 ```
 
 All four directions (Swift→CLI and CLI→Swift, for both X25519 and
 passphrase mode) are covered by automated tests against the real `age`
-binary.
+binary — binary and armored, plus armor/dearmor conversion interop.
 
 ## Error handling
 
@@ -173,7 +210,7 @@ binary.
 | `.invalidIdentity` | Not a valid `AGE-SECRET-KEY-1...` string |
 | `.invalidRecipient` | Not a valid `age1...` string |
 | `.encryptionFailed(String)` | Encryption backend failure |
-| `.invalidFormat` | Input is not an age file (bad magic/header) |
+| `.invalidFormat(String)` | Input is not an age file — bad magic/header, or malformed ASCII armor; the payload carries the secret-free backend explanation |
 | `.noMatchingKey` | Wrong passphrase, or none of the identities match |
 | `.decryptionFailed(String)` | Corrupted or truncated payload |
 | `.backendFailure(String)` | Unexpected backend result (never expected) |
@@ -224,14 +261,14 @@ Current limitations:
   macOS-specific).
 - In-memory APIs only — no streaming for very large files (the age crate's
   streaming reader/writer can be exposed later behind the same FFI pattern).
-- No SSH identities, plugins, ASCII armor, or recipient files.
+- No SSH identities, plugins, or recipient files.
 - `swift test` on Intel Macs runs the library through Rosetta-free native
   code but the CI matrix currently exercises arm64 hosts; the Intel slice is
   cross-compiled and unit-tested via the same Rust tests.
 
 Roadmap ideas (in rough priority order): tagged releases with a checksummed
 remote binary target (keeping the source build path); iOS/tvOS/watchOS
-slices; armor support; SSH recipient support; streaming APIs.
+slices; SSH recipient support; streaming APIs.
 
 ## License
 

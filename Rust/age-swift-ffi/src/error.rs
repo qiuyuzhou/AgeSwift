@@ -15,7 +15,10 @@ pub(crate) enum CoreError {
     EncryptionFailed(String),
     DecryptionFailed(String),
     NoMatchingKey,
-    InvalidFormat,
+    /// The input is not a usable age file in either representation. The
+    /// detail explains whether the binary structure or the ASCII armor is
+    /// at fault; it never contains secrets.
+    InvalidFormat(String),
 }
 
 impl fmt::Display for CoreError {
@@ -29,7 +32,7 @@ impl fmt::Display for CoreError {
             Self::NoMatchingKey => {
                 write!(f, "no provided identity or passphrase matches this file")
             }
-            Self::InvalidFormat => write!(f, "input is not a valid age file"),
+            Self::InvalidFormat(detail) => write!(f, "input is not a valid age file: {detail}"),
         }
     }
 }

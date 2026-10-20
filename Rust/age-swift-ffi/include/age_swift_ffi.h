@@ -86,23 +86,36 @@ ageswift_status ageswift_identity_recipient(const char *identity,
                                             char **error_out);
 
 /*
+ * Output encoding for encryption. Armored output is the age ASCII armor
+ * format (PEM-like, canonical base64, 64-column lines); it is pure ASCII
+ * and safe to treat as UTF-8 text.
+ */
+typedef enum ageswift_format {
+    AGESWIFT_FORMAT_BINARY = 0,
+    AGESWIFT_FORMAT_ASCII_ARMOR = 1
+} ageswift_format;
+
+/*
  * Encrypt `plaintext` for one or more age recipients.
  * `recipients` points to an array of NUL-terminated UTF-8 strings;
  * `recipients_len` must be >= 1. On success sets *ciphertext_out to the
- * binary age v1 file.
+ * age v1 file in the requested format.
  */
 ageswift_status ageswift_encrypt_to_recipients(
     const uint8_t *plaintext, uintptr_t plaintext_len,
     const char *const *recipients, uintptr_t recipients_len,
+    ageswift_format format,
     ageswift_bytes *ciphertext_out, char **error_out);
 
 /*
  * Encrypt `plaintext` with a passphrase using age's standard scrypt
- * recipient and its default (~1 second) work factor.
+ * recipient and its default (~1 second) work factor, in the requested
+ * output format.
  */
 ageswift_status ageswift_encrypt_with_passphrase(
     const uint8_t *plaintext, uintptr_t plaintext_len,
     const char *passphrase,
+    ageswift_format format,
     ageswift_bytes *ciphertext_out, char **error_out);
 
 /*
@@ -124,6 +137,26 @@ ageswift_status ageswift_decrypt_with_passphrase(
     const uint8_t *ciphertext, uintptr_t ciphertext_len,
     const char *passphrase,
     ageswift_bytes *plaintext_out, char **error_out);
+
+/*
+ * Wrap a binary age file in the age ASCII armor format. The input is
+ * structurally validated first (header parse; no keys are needed), so
+ * non-age input fails with AGESWIFT_ERR_INVALID_FORMAT. On success sets
+ * *armored_out to the armored ASCII text; free it with
+ * ageswift_free_string.
+ */
+ageswift_status ageswift_armor(const uint8_t *binary, uintptr_t binary_len,
+                               char **armored_out, char **error_out);
+
+/*
+ * Decode an age ASCII armor file back to the binary format. Whitespace
+ * around the armored block is tolerated; input that is not armored, or
+ * armor that is malformed (invalid base64, missing END marker, ...), fails
+ * with AGESWIFT_ERR_INVALID_FORMAT. The decoded output is structurally
+ * validated to be an age file before it is returned.
+ */
+ageswift_status ageswift_dearmor(const char *armored,
+                                 ageswift_bytes *binary_out, char **error_out);
 
 /* Release a buffer returned in an `ageswift_bytes` out-param. NULL-safe:
  * ptr==NULL implies len==capacity==0 and the call is a no-op. */

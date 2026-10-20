@@ -11,8 +11,10 @@ public enum AgeError: Error, Equatable, Sendable, CustomStringConvertible {
     case invalidRecipient
     /// Encryption failed in the underlying age implementation.
     case encryptionFailed(String)
-    /// The data is not a valid age file (bad magic bytes, header, or header MAC).
-    case invalidFormat
+    /// The data is not a valid age file in either representation: bad magic
+    /// bytes, header, or header MAC — or malformed ASCII armor. The detail is
+    /// the secret-free backend description (e.g. "invalid ASCII armor: ...").
+    case invalidFormat(String)
     /// None of the provided identities or passphrases could decrypt the file.
     case noMatchingKey
     /// Decryption failed after the header was accepted (corrupted or truncated payload).
@@ -32,8 +34,10 @@ public enum AgeError: Error, Equatable, Sendable, CustomStringConvertible {
             return "not a valid age recipient string"
         case .encryptionFailed(let detail):
             return "encryption failed: \(detail)"
-        case .invalidFormat:
-            return "input is not a valid age file"
+        case .invalidFormat(let detail):
+            // The backend message is already a complete, secret-free
+            // description ("input is not a valid age file: ...").
+            return detail
         case .noMatchingKey:
             return "no matching identity or passphrase found for this file"
         case .decryptionFailed(let detail):
@@ -60,7 +64,7 @@ public enum AgeError: Error, Equatable, Sendable, CustomStringConvertible {
         case AGESWIFT_ERR_NO_MATCHING_KEY.rawValue:
             return .noMatchingKey
         case AGESWIFT_ERR_INVALID_FORMAT.rawValue:
-            return .invalidFormat
+            return .invalidFormat(message ?? "input is not a valid age file")
         default:
             return .backendFailure("unexpected FFI status \(status.rawValue)\(message.map { ": \($0)" } ?? "")")
         }
@@ -95,6 +99,16 @@ enum AgeFFI {
             return Data(bytes: pointer, count: Int(buffer.len))
         }
         return Data()
+    }
+
+    /// Converts a Rust-returned byte buffer that is expected to be UTF-8
+    /// text (armored output) into a `String`. Armor is ASCII by construction;
+    /// a failure here means the backend misbehaved.
+    static func textFromBytes(_ data: Data) throws -> String {
+        guard let text = String(data: data, encoding: .utf8) else {
+            throw AgeError.backendFailure("armored output was not valid UTF-8")
+        }
+        return text
     }
 
     /// Runs `body` with a C array of pointers to NUL-terminated copies of

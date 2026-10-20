@@ -19,6 +19,48 @@ public enum Age {
     ///   malformed; ``AgeError/encryptionFailed`` on backend failure.
     @discardableResult
     public static func encrypt(_ plaintext: Data, recipients: [AgeRecipient]) throws -> Data {
+        try encryptImpl(plaintext, recipients: recipients, format: AGESWIFT_FORMAT_BINARY)
+    }
+
+    /// Encrypts `plaintext` for one or more recipients into an age ASCII
+    /// armor file (PEM-like text, safe to paste into emails and chats).
+    ///
+    /// The result decrypts with any age implementation, including
+    /// ``decrypt(_:identities:)`` — both representations are accepted.
+    /// - Throws: ``AgeError/invalidRecipient`` if a recipient string is
+    ///   malformed; ``AgeError/encryptionFailed`` on backend failure.
+    @discardableResult
+    public static func encryptArmored(_ plaintext: Data, recipients: [AgeRecipient]) throws -> String {
+        try AgeFFI.textFromBytes(
+            try encryptImpl(plaintext, recipients: recipients, format: AGESWIFT_FORMAT_ASCII_ARMOR)
+        )
+    }
+
+    /// Encrypts `plaintext` with a passphrase using age's standard scrypt
+    /// recipient and its default (~1 second) work factor.
+    /// - Throws: ``AgeError/encryptionFailed`` on backend failure.
+    @discardableResult
+    public static func encrypt(_ plaintext: Data, passphrase: String) throws -> Data {
+        try encryptImpl(plaintext, passphrase: passphrase, format: AGESWIFT_FORMAT_BINARY)
+    }
+
+    /// Encrypts `plaintext` with a passphrase into an age ASCII armor file.
+    ///
+    /// The result decrypts with any age implementation, including
+    /// ``decrypt(_:passphrase:)`` — both representations are accepted.
+    /// - Throws: ``AgeError/encryptionFailed`` on backend failure.
+    @discardableResult
+    public static func encryptArmored(_ plaintext: Data, passphrase: String) throws -> String {
+        try AgeFFI.textFromBytes(
+            try encryptImpl(plaintext, passphrase: passphrase, format: AGESWIFT_FORMAT_ASCII_ARMOR)
+        )
+    }
+
+    private static func encryptImpl(
+        _ plaintext: Data,
+        recipients: [AgeRecipient],
+        format: ageswift_format
+    ) throws -> Data {
         guard !recipients.isEmpty else {
             throw AgeError.invalidArgument("at least one recipient is required")
         }
@@ -31,6 +73,7 @@ public enum Age {
                     let status = ageswift_encrypt_to_recipients(
                         bytes, UInt(count),
                         buffer.baseAddress, UInt(buffer.count),
+                        format,
                         &output, &error
                     )
                     defer { AgeFFI.freeString(error) }
@@ -41,11 +84,11 @@ public enum Age {
         }
     }
 
-    /// Encrypts `plaintext` with a passphrase using age's standard scrypt
-    /// recipient and its default (~1 second) work factor.
-    /// - Throws: ``AgeError/encryptionFailed`` on backend failure.
-    @discardableResult
-    public static func encrypt(_ plaintext: Data, passphrase: String) throws -> Data {
+    private static func encryptImpl(
+        _ plaintext: Data,
+        passphrase: String,
+        format: ageswift_format
+    ) throws -> Data {
         try AgeFFI.withBytes(of: plaintext) { bytes, count in
             try passphrase.withCString { passphraseCString in
                 var output = ageswift_bytes()
@@ -53,6 +96,7 @@ public enum Age {
                 let status = ageswift_encrypt_with_passphrase(
                     bytes, UInt(count),
                     passphraseCString,
+                    format,
                     &output, &error
                 )
                 defer { AgeFFI.freeString(error) }
@@ -64,8 +108,11 @@ public enum Age {
 
     // MARK: - Decryption
 
-    /// Decrypts a binary age v1 file with one or more secret identities.
+    /// Decrypts an age file with one or more secret identities.
     ///
+    /// Both representations are accepted: binary age v1 files and ASCII
+    /// armor (leading and trailing whitespace around an armored block is
+    /// ignored, so pasted text works).
     /// - Throws: ``AgeError/invalidFormat`` if the input is not an age file;
     ///   ``AgeError/noMatchingKey`` if none of the identities matches;
     ///   ``AgeError/decryptionFailed`` if the payload is corrupted or
@@ -94,8 +141,24 @@ public enum Age {
         }
     }
 
+    /// Decrypts an age file with one or more secret identities, accepting
+    /// ciphertext as text (typically pasted ASCII armor; binary data passed
+    /// as UTF-8 text also works).
+    ///
+    /// - Throws: ``AgeError/invalidFormat`` if the input is not an age file;
+    ///   ``AgeError/noMatchingKey`` if none of the identities matches;
+    ///   ``AgeError/decryptionFailed`` if the payload is corrupted or
+    ///   truncated.
+    @discardableResult
+    public static func decrypt(_ ciphertext: String, identities: [AgeIdentity]) throws -> Data {
+        try decrypt(Data(ciphertext.utf8), identities: identities)
+    }
+
     /// Decrypts a passphrase-protected (scrypt) age file.
     ///
+    /// Both representations are accepted: binary age v1 files and ASCII
+    /// armor (leading and trailing whitespace around an armored block is
+    /// ignored, so pasted text works).
     /// - Throws: ``AgeError/invalidFormat`` if the input is not an age file;
     ///   ``AgeError/noMatchingKey`` on a wrong passphrase;
     ///   ``AgeError/decryptionFailed`` if the payload is corrupted or
@@ -116,5 +179,17 @@ public enum Age {
                 return try AgeFFI.copyAndFree(output)
             }
         }
+    }
+
+    /// Decrypts a passphrase-protected (scrypt) age file, accepting
+    /// ciphertext as text (typically pasted ASCII armor).
+    ///
+    /// - Throws: ``AgeError/invalidFormat`` if the input is not an age file;
+    ///   ``AgeError/noMatchingKey`` on a wrong passphrase;
+    ///   ``AgeError/decryptionFailed`` if the payload is corrupted or
+    ///   truncated.
+    @discardableResult
+    public static func decrypt(_ ciphertext: String, passphrase: String) throws -> Data {
+        try decrypt(Data(ciphertext.utf8), passphrase: passphrase)
     }
 }

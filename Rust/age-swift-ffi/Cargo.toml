@@ -1,6 +1,6 @@
 [package]
 name = "age-swift-ffi"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
@@ -14,9 +14,14 @@ crate-type = ["lib", "staticlib"]
 
 [dependencies]
 # x25519 and scrypt support is unconditionally compiled in the age crate;
-# optional features (armor, ssh, plugins, async, cli-common) stay disabled to
-# keep the binary small.
-age = { version = "0.12", default-features = false }
+# `armor` enables the age ASCII armor reader/writer. Other optional features
+# (ssh, plugins, async, cli-common) stay disabled to keep the binary small.
+age = { version = "0.12", default-features = false, features = ["armor"] }
+
+[dev-dependencies]
+# Only used to check the SHA-256 payload hashes of the upstream testkit
+# vectors; already in the dependency graph via `age`.
+sha2 = "0.10"
 
 [profile.release]
 lto = true

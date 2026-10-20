@@ -49,6 +49,24 @@ pub struct AgeswiftBytes {
     pub capacity: usize,
 }
 
+/// Mirrors `ageswift_format` in include/age_swift_ffi.h.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AgeswiftFormat {
+    Binary = 0,
+    AsciiArmor = 1,
+}
+
+/// Maps the C ABI format onto the age crate's own format enum. The Rust
+/// enum is `repr(C)`; per the header contract callers pass only the two
+/// documented discriminants.
+fn armor_format(format: AgeswiftFormat) -> age::armor::Format {
+    match format {
+        AgeswiftFormat::Binary => age::armor::Format::Binary,
+        AgeswiftFormat::AsciiArmor => age::armor::Format::AsciiArmor,
+    }
+}
+
 impl CoreError {
     fn status(&self) -> AgeswiftStatus {
         match self {
@@ -58,7 +76,7 @@ impl CoreError {
             Self::EncryptionFailed(_) => AgeswiftStatus::EncryptionFailed,
             Self::DecryptionFailed(_) => AgeswiftStatus::DecryptionFailed,
             Self::NoMatchingKey => AgeswiftStatus::NoMatchingKey,
-            Self::InvalidFormat => AgeswiftStatus::InvalidFormat,
+            Self::InvalidFormat(_) => AgeswiftStatus::InvalidFormat,
         }
     }
 }
@@ -255,6 +273,7 @@ pub extern "C" fn ageswift_encrypt_to_recipients(
     plaintext_len: usize,
     recipients: *const *const c_char,
     recipients_len: usize,
+    format: AgeswiftFormat,
     ciphertext_out: *mut AgeswiftBytes,
     error_out: *mut *mut c_char,
 ) -> AgeswiftStatus {
@@ -273,7 +292,7 @@ pub extern "C" fn ageswift_encrypt_to_recipients(
             .iter()
             .map(|s| api::parse_recipient(s))
             .collect::<Result<Vec<_>, _>>()?;
-        let ciphertext = api::encrypt_to_recipients(plaintext, &parsed)?;
+        let ciphertext = api::encrypt_to_recipients(plaintext, &parsed, armor_format(format))?;
         write_bytes_out(ciphertext, ciphertext_out)
     })
 }
@@ -283,6 +302,7 @@ pub extern "C" fn ageswift_encrypt_with_passphrase(
     plaintext: *const u8,
     plaintext_len: usize,
     passphrase: *const c_char,
+    format: AgeswiftFormat,
     ciphertext_out: *mut AgeswiftBytes,
     error_out: *mut *mut c_char,
 ) -> AgeswiftStatus {
@@ -291,7 +311,8 @@ pub extern "C" fn ageswift_encrypt_with_passphrase(
         let plaintext = unsafe { input_bytes(plaintext, plaintext_len)? };
         // SAFETY: caller of the C ABI honors the pointer contract.
         let passphrase = unsafe { input_str(passphrase, "passphrase pointer is null")? };
-        let ciphertext = api::encrypt_with_passphrase(plaintext, passphrase)?;
+        let ciphertext =
+            api::encrypt_with_passphrase(plaintext, passphrase, armor_format(format))?;
         write_bytes_out(ciphertext, ciphertext_out)
     })
 }
@@ -340,6 +361,35 @@ pub extern "C" fn ageswift_decrypt_with_passphrase(
         let passphrase = unsafe { input_str(passphrase, "passphrase pointer is null")? };
         let plaintext = api::decrypt_with_passphrase(ciphertext, passphrase)?;
         write_bytes_out(plaintext, plaintext_out)
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn ageswift_armor(
+    binary: *const u8,
+    binary_len: usize,
+    armored_out: *mut *mut c_char,
+    error_out: *mut *mut c_char,
+) -> AgeswiftStatus {
+    ffi_boundary(error_out, || {
+        // SAFETY: caller of the C ABI honors the pointer contract.
+        let binary = unsafe { input_bytes(binary, binary_len)? };
+        let armored = api::armor(binary)?;
+        write_string_out(armored, armored_out)
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn ageswift_dearmor(
+    armored: *const c_char,
+    binary_out: *mut AgeswiftBytes,
+    error_out: *mut *mut c_char,
+) -> AgeswiftStatus {
+    ffi_boundary(error_out, || {
+        // SAFETY: caller of the C ABI honors the pointer contract.
+        let armored = unsafe { input_str(armored, "armored input pointer is null")? };
+        let binary = api::dearmor(armored)?;
+        write_bytes_out(binary, binary_out)
     })
 }
 

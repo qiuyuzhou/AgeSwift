@@ -69,13 +69,13 @@ struct ErrorTests {
 
     @Test func garbageInputIsInvalidFormat() throws {
         let identity = try AgeIdentity.generate()
-        #expect(throws: AgeError.invalidFormat) {
+        AgeErrorExpectations.expectInvalidFormat {
             _ = try Age.decrypt(Data("definitely not an age file".utf8), identities: [identity])
         }
-        #expect(throws: AgeError.invalidFormat) {
+        AgeErrorExpectations.expectInvalidFormat {
             _ = try Age.decrypt(Data(), identities: [identity])
         }
-        #expect(throws: AgeError.invalidFormat) {
+        AgeErrorExpectations.expectInvalidFormat {
             // Truncated right after the magic line.
             _ = try Age.decrypt(Data("age-encryption.org/v1\n".utf8), identities: [identity])
         }
@@ -108,7 +108,7 @@ struct ErrorTests {
             .invalidRecipient,
             .invalidIdentity,
             .noMatchingKey,
-            .invalidFormat,
+            .invalidFormat("input is not a valid age file"),
         ]
         for error in cases {
             #expect(!error.description.contains(passphrase))
