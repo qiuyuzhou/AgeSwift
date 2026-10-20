@@ -77,36 +77,32 @@ tasks:
     desc: Write the release URL and checksum into Package.swift (internal step)
     requires:
       vars: [VERSION]
+    vars:
+      URL: 'https://github.com/{{.REPO}}/releases/download/{{.VERSION}}/{{.XCFRAMEWORK}}.zip'
+      CHECKSUM:
+        sh: cat {{.CHECKSUM_FILE}}
+    preconditions:
+      - sh: '[[ "{{.CHECKSUM}}" =~ ^[0-9a-f]{64}$ ]]'
+        msg: '{{.CHECKSUM_FILE}} does not contain a 64-char sha256 checksum'
     cmds:
-      - |
-        set -euo pipefail
-        CHECKSUM="$(cat {{.CHECKSUM_FILE}})"
-        URL="https://github.com/{{.REPO}}/releases/download/{{.VERSION}}/{{.XCFRAMEWORK}}.zip"
-        # Guard against anything unexpected (e.g. extra stdout lines) polluting the value
-        [[ "$CHECKSUM" =~ ^[0-9a-f]{64}$ ]] \
-          || { echo "unexpected checksum value: '$CHECKSUM'"; exit 1; }
-        # Whole-line rewrite (anchored on the `let` prefix): no capture groups,
-        # no escaping ambiguity — values are checksums/URLs without | or &.
-        sed \
-          -e "s|^let releasedBinaryURL = .*|let releasedBinaryURL = \"$URL\"|" \
-          -e "s|^let releasedBinaryChecksum = .*|let releasedBinaryChecksum = \"$CHECKSUM\"|" \
-          Package.swift > Package.swift.tmp
-        mv Package.swift.tmp Package.swift
-        # Verify the substitutions actually happened (fails here if the manifest shape drifts)
-        grep -F "let releasedBinaryURL = \"$URL\"" Package.swift
-        grep -F "let releasedBinaryChecksum = \"$CHECKSUM\"" Package.swift
+      # Whole-line rewrite (anchored on the `let` prefix): no capture groups,
+      # no escaping ambiguity — values are checksums/URLs without | or &.
+      - 'sed -e "s|^let releasedBinaryURL = .*|let releasedBinaryURL = \"{{.URL}}\"|" -e "s|^let releasedBinaryChecksum = .*|let releasedBinaryChecksum = \"{{.CHECKSUM}}\"|" Package.swift > Package.swift.tmp'
+      - mv Package.swift.tmp Package.swift
+      # Verify the substitutions actually happened (fails here if the manifest shape drifts)
+      - 'grep -F "let releasedBinaryURL = \"{{.URL}}\"" Package.swift'
+      - 'grep -F "let releasedBinaryChecksum = \"{{.CHECKSUM}}\"" Package.swift'
 
   tag:
     internal: true
     desc: Commit the manifest change and create the annotated tag (internal step)
     requires:
       vars: [VERSION]
+    preconditions:
+      - sh: '! git diff --quiet HEAD -- Package.swift'
+        msg: 'Package.swift unchanged: the manifest step must patch it before tagging'
     cmds:
       - git add Package.swift
-      - |
-        if git diff --cached --quiet -- Package.swift; then
-          echo "Package.swift unchanged, aborting"; exit 1
-        fi
       - git commit -m "Release {{.VERSION}}"
       - git tag -a {{.VERSION}} -m "AgeSwift {{.VERSION}}"
 
