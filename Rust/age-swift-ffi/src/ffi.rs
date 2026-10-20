@@ -311,8 +311,7 @@ pub extern "C" fn ageswift_encrypt_with_passphrase(
         let plaintext = unsafe { input_bytes(plaintext, plaintext_len)? };
         // SAFETY: caller of the C ABI honors the pointer contract.
         let passphrase = unsafe { input_str(passphrase, "passphrase pointer is null")? };
-        let ciphertext =
-            api::encrypt_with_passphrase(plaintext, passphrase, armor_format(format))?;
+        let ciphertext = api::encrypt_with_passphrase(plaintext, passphrase, armor_format(format))?;
         write_bytes_out(ciphertext, ciphertext_out)
     })
 }

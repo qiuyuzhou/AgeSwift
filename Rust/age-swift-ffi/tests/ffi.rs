@@ -112,11 +112,7 @@ fn encrypt_to_recipients(
     status
 }
 
-fn encrypt_for_assertion(
-    plaintext: &[u8],
-    recipients: &[&str],
-    format: AgeswiftFormat,
-) -> Vec<u8> {
+fn encrypt_for_assertion(plaintext: &[u8], recipients: &[&str], format: AgeswiftFormat) -> Vec<u8> {
     let mut ciphertext = zeroed_bytes();
     let mut error = ptr::null_mut();
     let c_recipients: Vec<CString> = recipients
@@ -299,8 +295,11 @@ fn x25519_multiple_recipients_each_decrypt() {
     let (identity_c, _) = generate(); // not a recipient of this file
 
     let plaintext = b"multi-recipient payload";
-    let ciphertext =
-        encrypt_for_assertion(plaintext, &[&recipient_a, &recipient_b], AgeswiftFormat::Binary);
+    let ciphertext = encrypt_for_assertion(
+        plaintext,
+        &[&recipient_a, &recipient_b],
+        AgeswiftFormat::Binary,
+    );
 
     assert_eq!(
         decrypt_with_identities(&ciphertext, &[&identity_a]).expect("A decrypts"),
@@ -452,7 +451,11 @@ fn garbage_input_is_invalid_format() {
 #[test]
 fn truncated_and_corrupted_files_fail() {
     let (identity, recipient) = generate();
-    let ciphertext = encrypt_for_assertion(b"some payload to corrupt", &[&recipient], AgeswiftFormat::Binary);
+    let ciphertext = encrypt_for_assertion(
+        b"some payload to corrupt",
+        &[&recipient],
+        AgeswiftFormat::Binary,
+    );
 
     // Truncated header.
     let truncated = &ciphertext[..10];
@@ -560,8 +563,12 @@ fn armor_rejects_non_age_input() {
 
     // Armored text fed back into armor is not a binary age file either.
     let (_, recipient) = generate();
-    let armored = armor_bytes(&encrypt_for_assertion(b"x", &[&recipient], AgeswiftFormat::Binary))
-        .expect("armors");
+    let armored = armor_bytes(&encrypt_for_assertion(
+        b"x",
+        &[&recipient],
+        AgeswiftFormat::Binary,
+    ))
+    .expect("armors");
     assert_eq!(
         armor_bytes(armored.as_bytes()),
         Err(AgeswiftStatus::InvalidFormat)
@@ -590,10 +597,7 @@ fn dearmor_is_strict_about_input_format() {
         .filter(|l| !l.starts_with("-----END"))
         .collect::<Vec<_>>()
         .join("\n");
-    assert_eq!(
-        dearmor_str(&truncated),
-        Err(AgeswiftStatus::InvalidFormat)
-    );
+    assert_eq!(dearmor_str(&truncated), Err(AgeswiftStatus::InvalidFormat));
 
     // NULL input is an argument error (string pointer contract).
     let mut out = zeroed_bytes();
@@ -651,7 +655,8 @@ fn run_testkit(name: &str) {
     let vector = parse_testkit(name);
     let result = decrypt_with_identities(&vector.content, &[&vector.identity]);
     if vector.expect_success {
-        let plaintext = result.unwrap_or_else(|status| panic!("{name}: expected success, got {status:?}"));
+        let plaintext =
+            result.unwrap_or_else(|status| panic!("{name}: expected success, got {status:?}"));
         use sha2::{Digest, Sha256};
         let digest = Sha256::digest(&plaintext).to_vec();
         assert_eq!(

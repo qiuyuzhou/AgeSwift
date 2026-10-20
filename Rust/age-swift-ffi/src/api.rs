@@ -118,17 +118,13 @@ fn decrypt_impl(
     // passes binary files through unchanged, matching the age CLI: decrypt
     // accepts either representation. Whitespace preceding an armored block
     // is stripped first (see `strip_leading_armor_whitespace`).
-    let ciphertext =
-        strip_leading_armor_whitespace(ciphertext).unwrap_or(ciphertext);
-    let decryptor =
-        Decryptor::new(ArmoredReader::new(ciphertext)).map_err(map_decrypt_error)?;
+    let ciphertext = strip_leading_armor_whitespace(ciphertext).unwrap_or(ciphertext);
+    let decryptor = Decryptor::new(ArmoredReader::new(ciphertext)).map_err(map_decrypt_error)?;
     let mut reader = decryptor
         .decrypt(identities.into_iter())
         .map_err(map_decrypt_error)?;
     let mut plaintext = Vec::new();
-    reader
-        .read_to_end(&mut plaintext)
-        .map_err(map_read_error)?;
+    reader.read_to_end(&mut plaintext).map_err(map_read_error)?;
     Ok(plaintext)
 }
 
@@ -158,7 +154,9 @@ fn strip_leading_armor_whitespace(input: &[u8]) -> Option<&[u8]> {
 /// a key opens the file, so this verifies structure, not integrity. No keys
 /// are involved.
 fn validate_age_file(binary: &[u8]) -> Result<(), CoreError> {
-    Decryptor::new(binary).map_err(map_decrypt_error).map(|_| ())
+    Decryptor::new(binary)
+        .map_err(map_decrypt_error)
+        .map(|_| ())
 }
 
 /// Wraps a structurally valid binary age file in the ASCII armor format.
