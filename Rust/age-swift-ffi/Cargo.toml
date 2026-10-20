@@ -1,0 +1,24 @@
+[package]
+name = "age-swift-ffi"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+description = "C ABI over the Rust `age` crate, consumed by the AgeSwift Swift package"
+publish = false
+
+[lib]
+name = "age_swift_ffi"
+# `lib` for cargo test / rustdoc, `staticlib` for the XCFramework build.
+crate-type = ["lib", "staticlib"]
+
+[dependencies]
+# x25519 and scrypt support is unconditionally compiled in the age crate;
+# optional features (armor, ssh, plugins, async, cli-common) stay disabled to
+# keep the binary small.
+age = { version = "0.12", default-features = false }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = "debuginfo"

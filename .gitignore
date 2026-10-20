@@ -1,0 +1,19 @@
+# Rust
+Rust/age-swift-ffi/target/
+Rust/age-swift-ffi/build/
+
+# Generated Rust artifact for SwiftPM (rebuild with Scripts/build-xcframework.sh)
+Artifacts/
+
+# Swift Package Manager
+.build/
+*.xcodeproj/
+xcuserdata/
+Package.resolved
+
+# macOS
+.DS_Store
+
+# Editors
+.idea/
+.vscode/

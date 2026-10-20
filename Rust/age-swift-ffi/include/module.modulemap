@@ -1,0 +1,4 @@
+module AgeSwiftFFI {
+    header "age_swift_ffi.h"
+    export *
+}

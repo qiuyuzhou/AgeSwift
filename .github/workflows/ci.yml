@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test-macos:
+    name: Rust + Swift tests
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+          components: rustfmt, clippy
+
+      - name: Install age CLI for interoperability tests
+        run: brew install age
+
+      - name: Rust formatting
+        run: cargo fmt --manifest-path Rust/age-swift-ffi/Cargo.toml --check
+
+      - name: Rust tests (FFI layer)
+        run: cargo test --manifest-path Rust/age-swift-ffi/Cargo.toml
+
+      - name: Build XCFramework (both architectures)
+        run: ./Scripts/build-xcframework.sh
+
+      - name: Swift tests (including CLI interoperability)
+        run: swift test
