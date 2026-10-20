@@ -17,9 +17,11 @@ CRATE_DIR="$ROOT/Rust/age-swift-ffi"
 OUTPUT="$ROOT/Artifacts/AgeSwiftFFI.xcframework"
 LIB_NAME="libage_swift_ffi.a"
 
+# PROFILE is cargo's output directory name for the profile (the dev profile
+# builds into "debug", not "dev").
 PROFILE="release"
 if [[ "${1:-}" == "--debug" ]]; then
-    PROFILE="dev"
+    PROFILE="debug"
 fi
 
 TARGETS=(
@@ -33,7 +35,7 @@ mkdir -p target build/universal
 SLICES=()
 for target in "${TARGETS[@]}"; do
     echo "==> cargo build ($PROFILE, $target)"
-    if [[ "$PROFILE" == "dev" ]]; then
+    if [[ "$PROFILE" == "debug" ]]; then
         cargo build --target "$target"
     else
         cargo build --release --target "$target"
