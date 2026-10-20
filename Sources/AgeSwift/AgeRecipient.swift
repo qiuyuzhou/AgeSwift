@@ -21,7 +21,7 @@ public struct AgeRecipient: Sendable, Hashable, CustomStringConvertible {
     /// - Throws: ``AgeError/invalidRecipient`` if the string is malformed.
     public init(string: String) throws {
         var error: UnsafeMutablePointer<CChar>?
-        try string.withCString { cString in
+        try AgeFFI.withCString(string) { cString in
             let status = ageswift_validate_recipient(cString, &error)
             try AgeError.throwIfFailure(status, error)
         }

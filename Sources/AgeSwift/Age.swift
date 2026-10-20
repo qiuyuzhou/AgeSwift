@@ -82,7 +82,7 @@ public enum Age {
         format: ageswift_format
     ) throws -> Data {
         try AgeFFI.withBytes(of: plaintext) { bytes, count in
-            try passphrase.withCString { passphraseCString in
+            try AgeFFI.withCString(passphrase) { passphraseCString in
                 var output = ageswift_bytes()
                 var error: UnsafeMutablePointer<CChar>?
                 let status = ageswift_encrypt_with_passphrase(
@@ -150,7 +150,7 @@ public enum Age {
     ///   truncated.
     public static func decrypt(_ ciphertext: Data, passphrase: String) throws -> Data {
         try AgeFFI.withBytes(of: ciphertext) { bytes, count in
-            try passphrase.withCString { passphraseCString in
+            try AgeFFI.withCString(passphrase) { passphraseCString in
                 var output = ageswift_bytes()
                 var error: UnsafeMutablePointer<CChar>?
                 let status = ageswift_decrypt_with_passphrase(

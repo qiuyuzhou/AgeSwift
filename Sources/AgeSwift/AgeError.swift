@@ -120,6 +120,17 @@ enum AgeFFI {
         return text
     }
 
+    /// `String.withCString` for FFI inputs. Rejects interior NUL bytes: the
+    /// C ABI cannot represent them, so the Rust side would silently use only
+    /// the prefix before the NUL.
+    static func withCString<R>(_ string: String,
+                               _ body: (UnsafePointer<CChar>) throws -> R) throws -> R {
+        guard !string.utf8.contains(0) else {
+            throw AgeError.invalidArgument("string contains a NUL byte")
+        }
+        return try string.withCString(body)
+    }
+
     /// Runs `body` with a C array of pointers to NUL-terminated copies of
     /// `strings`, keeping the backing storage alive for the duration of the
     /// call without any manual malloc/free.

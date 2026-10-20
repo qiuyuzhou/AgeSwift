@@ -36,7 +36,7 @@ extension Age {
     /// - Throws: ``AgeError/invalidFormat`` if `armored` is not a valid
     ///   armored age file.
     public static func dearmor(_ armored: String) throws -> Data {
-        try armored.withCString { armoredCString in
+        try AgeFFI.withCString(armored) { armoredCString in
             var output = ageswift_bytes()
             var error: UnsafeMutablePointer<CChar>?
             let status = ageswift_dearmor(armoredCString, &output, &error)

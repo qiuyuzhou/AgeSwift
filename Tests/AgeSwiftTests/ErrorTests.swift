@@ -26,6 +26,28 @@ struct ErrorTests {
         }
     }
 
+    @Test func stringsWithNulBytesAreRejected() {
+        // C strings cannot carry an interior NUL; accepting one would let the
+        // backend silently use only the prefix before it. One case per entry
+        // point that crosses the ABI as a C string.
+        let nulError = AgeError.invalidArgument("string contains a NUL byte")
+        #expect(throws: nulError) {
+            _ = try AgeRecipient(string: "age1\0junk")
+        }
+        #expect(throws: nulError) {
+            _ = try AgeIdentity(string: "AGE-SECRET-KEY-1\0junk")
+        }
+        #expect(throws: nulError) {
+            _ = try Age.encrypt(Data("x".utf8), passphrase: "pw\0junk")
+        }
+        #expect(throws: nulError) {
+            _ = try Age.decrypt(Data("not an age file".utf8), passphrase: "pw\0junk")
+        }
+        #expect(throws: nulError) {
+            _ = try Age.dearmor("-----BEGIN AGE ENCRYPTED FILE-----\0junk")
+        }
+    }
+
     @Test func emptyCollectionsRejected() throws {
         let identity = try AgeIdentity.generate()
         let encrypted = try Age.encrypt(Data("x".utf8), recipients: [identity.recipient])

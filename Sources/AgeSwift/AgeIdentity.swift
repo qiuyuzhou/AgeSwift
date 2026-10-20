@@ -57,7 +57,7 @@ public struct AgeIdentity: Sendable, Hashable {
         var recipientString: UnsafeMutablePointer<CChar>?
         defer { AgeFFI.freeString(recipientString) }
         var error: UnsafeMutablePointer<CChar>?
-        try string.withCString { cString in
+        try AgeFFI.withCString(string) { cString in
             let status = ageswift_identity_recipient(cString, &recipientString, &error)
             try AgeError.throwIfFailure(status, error)
         }
