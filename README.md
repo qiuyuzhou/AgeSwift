@@ -84,6 +84,9 @@ static library, and wraps it (with the C header and module map) into an
 XCFramework. `Artifacts/` is gitignored; rebuild any time with the same
 command (`--debug` for an unoptimized Rust build while iterating).
 
+If you have [Task](https://taskfile.dev) installed (`brew install go-task`),
+`task build` and `task test` wrap the same commands (see `Taskfile.yml`).
+
 Rust unit/FFI tests:
 
 ```sh
@@ -92,12 +95,54 @@ cargo test --manifest-path Rust/age-swift-ffi/Cargo.toml
 
 ### Using AgeSwift in an application
 
-Until a tagged binary release exists (see roadmap), consume AgeSwift as a
-**local Swift package**: add the local folder as a package dependency in
-Xcode (or `.package(path:)` in your `Package.swift`), run
-`Scripts/build-xcframework.sh` once on each machine that builds, and link
-the `AgeSwift` library target. No binary is downloaded from this project's
-maintainers, and the full source-build path above always remains available.
+Once a tagged release exists, add AgeSwift as a package dependency:
+
+```swift
+.package(url: "https://github.com/qiuyuzhou/AgeSwift.git", from: "1.2.3")
+```
+
+SwiftPM downloads the released `AgeSwiftFFI.xcframework.zip` from GitHub
+Releases and verifies its checksum — no Rust toolchain is needed on the
+consumer's machine. Which binary the package uses is decided by one rule
+(see `Package.swift`): a locally built `Artifacts/AgeSwiftFFI.xcframework`
+wins if present (the development loop), otherwise the most recent release
+is downloaded (the consumer case).
+
+Consuming a local checkout still works: add the folder as a package
+dependency in Xcode (or `.package(path:)`) and run
+`Scripts/build-xcframework.sh` once on each machine that builds. The full
+source-build path above always remains available.
+
+## Releasing (maintainers)
+
+Releases are cut locally with [Task](https://taskfile.dev) — one command,
+one shell session, so the zip whose checksum lands in `Package.swift` is
+byte-identical to the zip attached to the GitHub Release:
+
+```sh
+task release VERSION=x.y.z
+```
+
+This runs, in order:
+
+1. `preflight` — clean worktree, on `main`, in sync with `origin/main`,
+   tag unused, `gh` logged in.
+2. `test` — Rust tests + `swift test`.
+3. `dist` — build the XCFramework, zip it, compute the SPM checksum.
+4. `manifest` — write the release URL and checksum into `Package.swift`.
+5. `tag` — commit the manifest change and create the annotated tag `x.y.z`.
+6. `publish` — push `main` + tag, create the GitHub Release with the zip.
+
+Then verify end-to-end that a downstream package can resolve and build the
+release (this actually downloads the artifact and checks the checksum):
+
+```sh
+task verify-release VERSION=x.y.z
+```
+
+Version rules: the git tag **is** the version, `x.y.z` semver (breaking →
+major, additive → minor, fixes → patch). Published tags are immutable —
+if a release is broken, ship `x.y.(z+1)`, never move a tag.
 
 ## Usage
 

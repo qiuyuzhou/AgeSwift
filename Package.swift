@@ -1,5 +1,33 @@
 // swift-tools-version: 6.0
+import Foundation
 import PackageDescription
+
+// The FFI layer is a prebuilt XCFramework built from the Rust sources in
+// Rust/age-swift-ffi (entry point: Scripts/build-xcframework.sh). Which copy
+// is used answers one question: does a locally built artifact exist?
+//
+//   - Yes (development machine, after `task build`): use the local
+//     Artifacts/AgeSwiftFFI.xcframework — this is the day-to-day dev loop.
+//   - No (anyone adding this package by URL): download the zip of the most
+//     recent release from GitHub Releases.
+//
+// `task release VERSION=x.y.z` builds the artifact and updates the two
+// releasedBinary* values below in the same run that creates the release.
+// Until the first release ships they hold placeholder values (0.0.0).
+let localXCFramework = "Artifacts/AgeSwiftFFI.xcframework"
+
+// Updated by `task release` — keep these two lines in this exact shape; the
+// release task patches them by regex and verifies the result.
+let releasedBinaryURL = "https://github.com/qiuyuzhou/AgeSwift/releases/download/0.0.0/AgeSwiftFFI.xcframework.zip"
+let releasedBinaryChecksum = "0000000000000000000000000000000000000000000000000000000000000000"
+
+let ffiTarget: Target = FileManager.default.fileExists(atPath: localXCFramework)
+    ? .binaryTarget(name: "AgeSwiftFFI", path: localXCFramework)
+    : .binaryTarget(
+        name: "AgeSwiftFFI",
+        url: releasedBinaryURL,
+        checksum: releasedBinaryChecksum
+    )
 
 let package = Package(
     name: "AgeSwift",
@@ -10,10 +38,7 @@ let package = Package(
         .library(name: "AgeSwift", targets: ["AgeSwift"])
     ],
     targets: [
-        // Prebuilt by Scripts/build-xcframework.sh (from the Rust sources in
-        // Rust/age-swift-ffi). The artifact is gitignored; run the script once
-        // after cloning before invoking SwiftPM. See README.md.
-        .binaryTarget(name: "AgeSwiftFFI", path: "Artifacts/AgeSwiftFFI.xcframework"),
+        ffiTarget,
         .target(name: "AgeSwift", dependencies: ["AgeSwiftFFI"]),
         .testTarget(name: "AgeSwiftTests", dependencies: ["AgeSwift"]),
     ],

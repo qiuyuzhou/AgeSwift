@@ -1,0 +1,166 @@
+# AgeSwift task runner — https://taskfile.dev
+#
+# 日常开发：
+#   task build        构建 Rust FFI 的 XCFramework
+#   task test         跑 Rust + Swift 全部测试
+#
+# 发版（本地一键，详见 README 的 Releasing 章节）：
+#   task release VERSION=x.y.z
+#   task verify-release VERSION=x.y.z   发布后验证下游可解析
+version: '3'
+
+vars:
+  ARTIFACT_DIR: Artifacts
+  XCFRAMEWORK: AgeSwiftFFI.xcframework
+  ZIP: Artifacts/AgeSwiftFFI.xcframework.zip
+  CHECKSUM_FILE: Artifacts/AgeSwiftFFI.xcframework.zip.checksum
+  REPO: qiuyuzhou/AgeSwift
+  REMOTE: origin
+  BRANCH: main
+
+tasks:
+  default:
+    desc: 列出全部任务
+    cmds:
+      - task --list
+
+  build:
+    desc: 从 Rust 源码构建 XCFramework（release 配置）
+    cmds:
+      - ./Scripts/build-xcframework.sh
+
+  test:
+    desc: 运行 Rust 测试与 swift test
+    deps: [build]
+    cmds:
+      - cargo test --manifest-path Rust/age-swift-ffi/Cargo.toml
+      - swift test
+
+  # ---- 以下 task 标记为 internal，仅供 release 编排调用，不出现在 --list ----
+
+  preflight:
+    internal: true
+    desc: 发布前检查（内部步骤）
+    requires:
+      vars: [VERSION]
+    cmds:
+      - |
+        set -euo pipefail
+        [[ "{{.VERSION}}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] \
+          || { echo "VERSION 必须是 x.y.z 形式，收到：{{.VERSION}}"; exit 1; }
+        test -z "$(git status --porcelain)" \
+          || { echo "工作区不干净，请先提交或 stash"; exit 1; }
+        test "$(git branch --show-current)" = "{{.BRANCH}}" \
+          || { echo "必须在 {{.BRANCH}} 分支上发版"; exit 1; }
+        git fetch {{.REMOTE}} {{.BRANCH}}
+        test "$(git rev-parse HEAD)" = "$(git rev-parse {{.REMOTE}}/{{.BRANCH}})" \
+          || { echo "本地与 origin/{{.BRANCH}} 不一致（落后或超前），先 pull/push"; exit 1; }
+        if git rev-parse -q --verify "refs/tags/{{.VERSION}}" >/dev/null; then
+          echo "本地已存在 tag {{.VERSION}}"; exit 1
+        fi
+        if git ls-remote --exit-code --tags {{.REMOTE}} "refs/tags/{{.VERSION}}" >/dev/null; then
+          echo "远端已存在 tag {{.VERSION}}"; exit 1
+        fi
+        command -v gh >/dev/null \
+          || { echo "需要 GitHub CLI（brew install gh）"; exit 1; }
+        gh auth status >/dev/null 2>&1 \
+          || { echo "gh 未登录，先运行 gh auth login"; exit 1; }
+        echo "preflight OK: {{.VERSION}}"
+
+  dist:
+    internal: true
+    desc: 打包 XCFramework zip 并计算 SPM checksum（内部步骤）
+    deps: [build]
+    cmds:
+      - rm -f {{.ZIP}} {{.CHECKSUM_FILE}}
+      - cd {{.ARTIFACT_DIR}} && zip -qry {{.XCFRAMEWORK}}.zip {{.XCFRAMEWORK}}
+      - swift package compute-checksum {{.ZIP}} | tee {{.CHECKSUM_FILE}}
+
+  manifest:
+    internal: true
+    desc: 把版本与 checksum 写入 Package.swift（内部步骤）
+    requires:
+      vars: [VERSION]
+    cmds:
+      - |
+        set -euo pipefail
+        CHECKSUM="$(cat {{.CHECKSUM_FILE}})"
+        URL="https://github.com/{{.REPO}}/releases/download/{{.VERSION}}/{{.XCFRAMEWORK}}.zip"
+        perl -0pi -e 's{(let releasedBinaryURL = ")[^"]*(")}{$1'"$URL"'$2}' Package.swift
+        perl -0pi -e 's{(let releasedBinaryChecksum = ")[^"]*(")}{$1'"$CHECKSUM"'$2}' Package.swift
+        # 校验替换真的发生了（清单行形状变了就在这里失败）
+        grep -F "let releasedBinaryURL = \"$URL\"" Package.swift
+        grep -F "let releasedBinaryChecksum = \"$CHECKSUM\"" Package.swift
+
+  tag:
+    internal: true
+    desc: 提交 manifest 变更并打 annotated tag（内部步骤）
+    requires:
+      vars: [VERSION]
+    cmds:
+      - git add Package.swift
+      - |
+        if git diff --cached --quiet -- Package.swift; then
+          echo "Package.swift 无变化，中止"; exit 1
+        fi
+      - git commit -m "Release {{.VERSION}}"
+      - git tag -a {{.VERSION}} -m "AgeSwift {{.VERSION}}"
+
+  publish:
+    internal: true
+    desc: 推送并创建 GitHub Release，附上同一份 zip（内部步骤）
+    requires:
+      vars: [VERSION]
+    cmds:
+      - git push {{.REMOTE}} {{.BRANCH}} refs/tags/{{.VERSION}}
+      - gh release create {{.VERSION}} {{.ZIP}} \
+          --verify-tag --title {{.VERSION}} --generate-notes
+      - echo "已发布 {{.VERSION}}：https://github.com/{{.REPO}}/releases/tag/{{.VERSION}}"
+
+  # ---- 对外入口 ----
+
+  release:
+    desc: 发布新版本（用法：task release VERSION=x.y.z）
+    requires:
+      vars: [VERSION]
+    cmds:
+      - task: preflight
+      - task: test
+      - task: dist
+      - task: manifest
+      - task: tag
+      - task: publish
+      - |
+        echo ""
+        echo "发布完成 {{.VERSION}}。建议再跑一次端到端验证："
+        echo "  task verify-release VERSION={{.VERSION}}"
+
+  verify-release:
+    desc: 用一个临时工程验证新版本可被下游解析并编译（用法：task verify-release VERSION=x.y.z）
+    requires:
+      vars: [VERSION]
+    cmds:
+      - |
+        set -euo pipefail
+        TMP="$(mktemp -d)"
+        trap 'rm -rf "$TMP"' EXIT
+        cd "$TMP"
+        mkdir -p Sources/Smoke
+        touch Sources/Smoke/Smoke.swift
+        cat > Package.swift <<EOF
+        // swift-tools-version: 6.0
+        import PackageDescription
+        let package = Package(
+            name: "Smoke",
+            platforms: [.macOS(.v13)],
+            dependencies: [
+                .package(url: "https://github.com/{{.REPO}}.git", from: "{{.VERSION}}"),
+            ],
+            targets: [
+                .target(name: "Smoke", dependencies: [.product(name: "AgeSwift", package: "AgeSwift")]),
+            ]
+        )
+        EOF
+        swift package resolve
+        swift build
+        echo "verify-release OK: 下游可解析并编译 {{.VERSION}}"
