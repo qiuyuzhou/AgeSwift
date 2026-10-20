@@ -70,10 +70,16 @@ public enum AgeError: Error, Equatable, Sendable, CustomStringConvertible {
         }
     }
 
-    /// Throws when `status` is not `AGESWIFT_OK`; consumes `errorPtr`.
+    /// Throws when `status` is not `AGESWIFT_OK`; consumes `errorPtr`, i.e.
+    /// releases the Rust-allocated message before returning (null on success).
+    ///
+    /// Ownership: this function is the only owner of `errorPtr`. Callers must
+    /// NOT free it afterwards — a second `ageswift_free_string` on the same
+    /// pointer is a double free and will crash or corrupt the heap.
     @inline(__always)
     static func throwIfFailure(_ status: ageswift_status,
                                _ errorPtr: UnsafeMutablePointer<CChar>?) throws {
+        defer { AgeFFI.freeString(errorPtr) }
         guard status != AGESWIFT_OK else { return }
         throw ffiError(status: status, message: errorPtr.map { String(cString: $0) })
     }

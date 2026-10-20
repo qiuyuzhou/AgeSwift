@@ -76,7 +76,6 @@ public enum Age {
                         format,
                         &output, &error
                     )
-                    defer { AgeFFI.freeString(error) }
                     try AgeError.throwIfFailure(status, error)
                     return try AgeFFI.copyAndFree(output)
                 }
@@ -99,7 +98,6 @@ public enum Age {
                     format,
                     &output, &error
                 )
-                defer { AgeFFI.freeString(error) }
                 try AgeError.throwIfFailure(status, error)
                 return try AgeFFI.copyAndFree(output)
             }
@@ -133,7 +131,6 @@ public enum Age {
                         buffer.baseAddress, UInt(buffer.count),
                         &output, &error
                     )
-                    defer { AgeFFI.freeString(error) }
                     try AgeError.throwIfFailure(status, error)
                     return try AgeFFI.copyAndFree(output)
                 }
@@ -174,7 +171,6 @@ public enum Age {
                     passphraseCString,
                     &output, &error
                 )
-                defer { AgeFFI.freeString(error) }
                 try AgeError.throwIfFailure(status, error)
                 return try AgeFFI.copyAndFree(output)
             }

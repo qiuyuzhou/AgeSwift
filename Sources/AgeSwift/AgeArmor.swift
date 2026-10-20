@@ -18,7 +18,6 @@ extension Age {
             var output: UnsafeMutablePointer<CChar>?
             var error: UnsafeMutablePointer<CChar>?
             let status = ageswift_armor(bytes, UInt(count), &output, &error)
-            defer { AgeFFI.freeString(error) }
             try AgeError.throwIfFailure(status, error)
             guard let output else {
                 throw AgeError.backendFailure("armor returned no output")
@@ -43,7 +42,6 @@ extension Age {
             var output = ageswift_bytes()
             var error: UnsafeMutablePointer<CChar>?
             let status = ageswift_dearmor(armoredCString, &output, &error)
-            defer { AgeFFI.freeString(error) }
             try AgeError.throwIfFailure(status, error)
             return try AgeFFI.copyAndFree(output)
         }
